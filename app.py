@@ -1092,7 +1092,7 @@ def main():
     # ══════════════════════════════════════════
     col_s2, col_i, col_f = st.columns([4, 1, 1])
     with col_s2:
-        st.markdown('<div style="border-left:4px solid #1A4B9B;padding-left:10px;margin:0.3rem 0 0.5rem;"><div style="font-size:1.2rem;font-weight:700;color:#1B2333;">Análisis de la Evolución de la Cartera</div></div>', unsafe_allow_html=True)
+        st.markdown('<div style="border-left:4px solid #1A4B9B;padding-left:10px;margin:0.3rem 0 0.5rem;min-height:4.4rem;display:flex;align-items:flex-start;"><div style="font-size:1.2rem;font-weight:700;color:#1B2333;padding-top:0.1rem;">Análisis de la Evolución de la Cartera</div></div>', unsafe_allow_html=True)
     with col_i:
         fecha_inicio = st.date_input(
             "Inicio",
