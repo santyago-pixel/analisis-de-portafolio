@@ -641,20 +641,18 @@ def main():
         # Columnas visibles (excluimos la interna _Valor Actual)
         cols_display = [
             'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
-            'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancias no Realizadas',
-            'Ganancia Total'
+            'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
         ]
 
         display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].copy()
-        display_df['Nominales']               = display_df['Nominales'].apply(_fmt_number)
-        display_df['Precio Actual']           = display_df['Precio Actual'].apply(_fmt_money)
-        display_df['Valor Actual']            = display_df['Valor Actual'].apply(_fmt_money)
-        display_df['Costo']                   = display_df['Costo'].apply(_fmt_money)
-        display_df['Amortizaciones']          = display_df['Amortizaciones'].apply(_fmt_money)
-        display_df['Cupones']                 = display_df['Cupones'].apply(_fmt_money)
-        display_df['Dividendos']              = display_df['Dividendos'].apply(_fmt_money)
-        display_df['Ganancias no Realizadas'] = display_df['Ganancias no Realizadas'].apply(_fmt_money)
-        display_df['Ganancia Total']          = display_df['Ganancia Total'].apply(_fmt_money)
+        display_df['Nominales']      = display_df['Nominales'].apply(_fmt_number)
+        display_df['Precio Actual']  = display_df['Precio Actual'].apply(_fmt_money)
+        display_df['Valor Actual']   = display_df['Valor Actual'].apply(_fmt_money)
+        display_df['Costo']          = display_df['Costo'].apply(_fmt_money)
+        display_df['Amortizaciones'] = display_df['Amortizaciones'].apply(_fmt_money)
+        display_df['Cupones']        = display_df['Cupones'].apply(_fmt_money)
+        display_df['Dividendos']     = display_df['Dividendos'].apply(_fmt_money)
+        display_df['Ganancia Total'] = display_df['Ganancia Total'].apply(_fmt_money)
 
         st.dataframe(
             display_df,
