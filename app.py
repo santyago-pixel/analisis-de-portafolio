@@ -62,7 +62,7 @@ footer             { visibility: hidden; }
 [data-testid="stToolbar"] { visibility: hidden; }
 [data-testid="stHeader"] {
     background-color: #1B2333 !important;
-    border-bottom: 3px solid #CC0000 !important;
+    border-bottom: 3px solid #1A4B9B !important;
 }
 
 /* ══════════════════════════════════════════════
@@ -113,8 +113,8 @@ h3 { font-size: 1.0rem !important; font-weight: 600 !important; color: #1B2333 !
 ══════════════════════════════════════════════ */
 [data-testid="stDownloadButton"] button {
     background-color: transparent !important;
-    color: #CC0000 !important;
-    border: 1.5px solid #CC0000 !important;
+    color: #1A4B9B !important;
+    border: 1.5px solid #1A4B9B !important;
     border-radius: 6px !important;
     font-weight: 500 !important;
     font-size: 0.82rem !important;
@@ -122,7 +122,7 @@ h3 { font-size: 1.0rem !important; font-weight: 600 !important; color: #1B2333 !
     transition: background 0.15s ease, color 0.15s ease !important;
 }
 [data-testid="stDownloadButton"] button:hover {
-    background-color: #CC0000 !important;
+    background-color: #1A4B9B !important;
     color: #FFFFFF !important;
 }
 
@@ -891,22 +891,17 @@ def _metric(label, value_str, sub_str=None):
 
 
 def _section_header(title, subtitle=None):
-    """Encabezado de sección con barra roja lateral, título y subtítulo opcional."""
-    sub_html = (
-        f'<div style="font-size:0.83rem;color:#6B7280;margin-top:3px;">{subtitle}</div>'
-        if subtitle else ''
-    )
+    """Encabezado de sección con barra azul lateral, título y subtítulo opcional.
+
+    Usa HTML en una sola línea para evitar que el parser de Streamlit
+    interprete los saltos de línea como markdown.
+    """
+    sub_html = f'<div style="font-size:0.83rem;color:#6B7280;margin-top:3px;">{subtitle}</div>' if subtitle else ''
     st.markdown(
-        f'''<div style="display:flex;align-items:flex-start;gap:11px;
-                        margin:2rem 0 0.75rem;">
-            <div style="width:4px;min-height:28px;background:#CC0000;
-                        border-radius:2px;flex-shrink:0;margin-top:3px;"></div>
-            <div>
-                <div style="font-size:1.2rem;font-weight:700;color:#1B2333;
-                            line-height:1.25;">{title}</div>
-                {sub_html}
-            </div>
-        </div>''',
+        f'<div style="display:flex;align-items:flex-start;gap:11px;margin:2rem 0 0.75rem;">'
+        f'<div style="width:4px;min-height:28px;background:#1A4B9B;border-radius:2px;flex-shrink:0;margin-top:3px;"></div>'
+        f'<div><div style="font-size:1.2rem;font-weight:700;color:#1B2333;line-height:1.25;">{title}</div>{sub_html}</div>'
+        f'</div>',
         unsafe_allow_html=True
     )
 
@@ -918,20 +913,6 @@ def main():
 
     # ── Sidebar ──────────────────────────────
     with st.sidebar:
-        # Logo / branding
-        st.markdown(
-            '''<div style="padding:0.6rem 0 1rem;border-bottom:2px solid #CC0000;
-                           margin-bottom:1.2rem;">
-                <div style="font-size:1.05rem;font-weight:700;color:#1B2333;">
-                    📊 Portfolio Tracker
-                </div>
-                <div style="font-size:0.72rem;color:#6B7280;margin-top:2px;">
-                    Análisis de Cartera de Inversión
-                </div>
-            </div>''',
-            unsafe_allow_html=True
-        )
-
         uploaded_file = st.file_uploader(
             "Cargar archivo Excel diferente",
             type=['xlsx', 'xls'],
@@ -1026,9 +1007,9 @@ def main():
                     {fecha_actual.strftime("%d de %B de %Y").capitalize()}
                 </div>
             </div>
-            <div style="font-size:0.78rem;font-weight:500;color:#CC0000;
-                        background:rgba(204,0,0,0.12);padding:4px 12px;
-                        border-radius:20px;border:1px solid rgba(204,0,0,0.3);">
+            <div style="font-size:0.78rem;font-weight:500;color:#FFFFFF;
+                        background:rgba(255,255,255,0.12);padding:4px 12px;
+                        border-radius:20px;border:1px solid rgba(255,255,255,0.35);">
                 {lbl_moneda}
             </div>
         </div>''',
@@ -1061,28 +1042,19 @@ def main():
         total_ganancia_no_r  = portfolio_df['Ganancias no Realizadas'].sum()
         pct_no_r             = (total_ganancia_no_r / total_costo * 100) if total_costo > 0 else 0
 
-        col1, col2, col3, col4, col5, col6 = st.columns(6)
-        with col1:
-            _metric("Total Activos",       str(len(portfolio_df)))
-        with col2:
-            _metric("Valor de Mercado",    _fmt_money(total_valor_mercado, moneda))
-        with col3:
-            _metric("Costo Total",         _fmt_money(total_costo, moneda))
-        with col4:
-            _metric("Ganancias Realizadas", _fmt_money(total_ganancia_r, moneda))
-        with col5:
-            _metric(
-                "Ganancias no Realizadas",
-                _fmt_money(total_ganancia_no_r, moneda),
-                f"{pct_no_r:.1f}%"
-            )
-        with col6:
-            _metric(
-                "Amort / Cup / Div",
-                f"{_fmt_money(total_amort, moneda)} / "
-                f"{_fmt_money(total_cup, moneda)} / "
-                f"{_fmt_money(total_div, moneda)}"
-            )
+        # ── Fila de resumen (misma tabla que los activos, una sola fila) ──────
+        pct_str = f"({'▼' if pct_no_r < 0 else '▲'} {abs(pct_no_r):.1f}%)"
+        summary_row = pd.DataFrame([{
+            'Activos':           len(portfolio_df),
+            'Valor de Mercado':  _fmt_money(total_valor_mercado, moneda),
+            'Costo Total':       _fmt_money(total_costo, moneda),
+            'G. Realizadas':     _fmt_money(total_ganancia_r, moneda),
+            'G. no Realizadas':  f"{_fmt_money(total_ganancia_no_r, moneda)} {pct_str}",
+            'Amortizaciones':    _fmt_money(total_amort, moneda),
+            'Cupones':           _fmt_money(total_cup, moneda),
+            'Dividendos':        _fmt_money(total_div, moneda),
+        }])
+        st.dataframe(summary_row, use_container_width=True, hide_index=True)
 
         # ── Tabla ────────────────────────────
         cols_display = [
@@ -1146,30 +1118,27 @@ def main():
     if evolution_df.empty:
         st.warning("No hay datos de evolución para el rango de fechas seleccionado.")
     else:
-        # Métricas
-        col1, col2, col3, col4, col5, col6 = st.columns(6)
-        with col1:
-            # Me4: distinguir activos abiertos de posiciones cerradas en el período
-            n_abiertos = int((evolution_df['Nominales'] > 0).sum())
-            n_cerrados = int((evolution_df['Nominales'] <= 0).sum())
-            label_act  = str(n_abiertos) if n_cerrados == 0 else (
-                f"{n_abiertos} ({n_cerrados} cerrado{'s' if n_cerrados > 1 else ''})"
-            )
-            _metric("Total Activos", label_act)
-        with col2:
-            _metric("Valor Total",     _fmt_money(evolution_df['Valor Actual'].sum(), moneda))
-        with col3:
-            _metric("Valor al Inicio", _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda))
-        with col4:
-            _metric("Compras en Período", _fmt_money(evolution_df['Compras'].sum(), moneda))
-        with col5:
-            flujos = evolution_df['Ventas'].sum() + evolution_df['Amort / Cup / Div'].sum()
-            _metric("Ventas + Flujos", _fmt_money(flujos, moneda))
-        with col6:
-            total_gain  = evolution_df['Ganancia Total'].sum()
-            base        = evolution_df['Valor al Inicio'].sum() + evolution_df['Compras'].sum()
-            pct_evo     = (total_gain / base * 100) if base > 0 else 0
-            _metric("Ganancia Total",  _fmt_money(total_gain, moneda), f"{pct_evo:.1f}%")
+        # ── Fila de resumen ────────────────────────────────────────────────────
+        # Me4: distinguir activos abiertos de posiciones cerradas en el período
+        n_abiertos = int((evolution_df['Nominales'] > 0).sum())
+        n_cerrados = int((evolution_df['Nominales'] <= 0).sum())
+        label_act  = str(n_abiertos) if n_cerrados == 0 else (
+            f"{n_abiertos} ({n_cerrados} cerrado{'s' if n_cerrados > 1 else ''})"
+        )
+        flujos     = evolution_df['Ventas'].sum() + evolution_df['Amort / Cup / Div'].sum()
+        total_gain = evolution_df['Ganancia Total'].sum()
+        base       = evolution_df['Valor al Inicio'].sum() + evolution_df['Compras'].sum()
+        pct_evo    = (total_gain / base * 100) if base > 0 else 0
+        pct_str2   = f"({'▼' if pct_evo < 0 else '▲'} {abs(pct_evo):.1f}%)"
+        summary_evo = pd.DataFrame([{
+            'Activos':          label_act,
+            'Valor Total':      _fmt_money(evolution_df['Valor Actual'].sum(), moneda),
+            'Valor al Inicio':  _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda),
+            'Compras':          _fmt_money(evolution_df['Compras'].sum(), moneda),
+            'Ventas + Flujos':  _fmt_money(flujos, moneda),
+            'Ganancia Total':   f"{_fmt_money(total_gain, moneda)} {pct_str2}",
+        }])
+        st.dataframe(summary_evo, use_container_width=True, hide_index=True)
 
         # Tabla
         evo_display = evolution_df.copy()
