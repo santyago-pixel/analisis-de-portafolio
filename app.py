@@ -134,8 +134,14 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
     """
     Calcula la composición actual de la cartera con lógica de reseteo.
 
+    El Costo usa Costo Promedio Ponderado (CPP):
+      - En cada Compra se recalcula el costo unitario promedio.
+      - En cada Venta los nominales bajan pero el costo unitario NO cambia,
+        por lo que el Costo de la posición restante se reduce proporcionalmente.
+      - Este es el método estándar de bancos y brokers (CNV / IFRS).
+
     Columnas de salida:
-        Activo | Nominales | Precio Actual | Valor Actual (interno) |
+        Activo | Nominales | Precio Actual | _Valor Actual (interno) |
         Costo | Amortizaciones | Cupones | Dividendos | Ganancias no Realizadas
     """
     operaciones = operaciones.copy()
@@ -162,28 +168,31 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
         else:
             ops = asset_ops_until[asset_ops_until['Fecha'] > last_reset_date]
 
-        # Acumular valores
-        current_nominals   = 0
-        total_invested     = 0   # Costo
-        total_ventas       = 0   # Ventas (no se muestra en tabla, se usa internamente)
-        total_amort        = 0   # Ganancias Realizadas – Amortizaciones
-        total_cupones      = 0   # Ganancias Realizadas – Cupones
-        total_dividendos   = 0   # Ganancias Realizadas – Dividendos
+        # ── Costo Promedio Ponderado ──────────────────────────────────────
+        # costo_unit_promedio = costo total acumulado / nominales acumulados
+        # En Compra: se recalcula ponderando el lote nuevo con la posición previa
+        # En Venta:  los nominales bajan pero el costo unitario no cambia
+        current_nominals    = 0
+        costo_unit_promedio = 0.0
+        total_amort         = 0
+        total_cupones       = 0
+        total_dividendos    = 0
 
         for _, op in ops.iterrows():
             tipo = op['Tipo'].strip()
             if tipo == 'Compra':
-                current_nominals += op['Cantidad']
-                total_invested   += op['Monto']
+                costo_prev          = current_nominals * costo_unit_promedio
+                current_nominals   += op['Cantidad']
+                costo_unit_promedio = (costo_prev + op['Monto']) / current_nominals
             elif tipo == 'Venta':
                 current_nominals -= op['Cantidad']
-                total_ventas     += op['Monto']
+                # costo_unit_promedio permanece igual en ventas parciales
             else:
                 categoria = _clasificar_operacion(tipo)
                 if categoria == 'amortizacion':
-                    total_amort     += op['Monto']
+                    total_amort      += op['Monto']
                 elif categoria == 'cupon':
-                    total_cupones   += op['Monto']
+                    total_cupones    += op['Monto']
                 elif categoria == 'dividendo':
                     total_dividendos += op['Monto']
 
@@ -191,25 +200,28 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
         if current_nominals <= 0:
             continue
 
+        # Costo de la posición actual = nominales × costo unitario promedio
+        costo_posicion = current_nominals * costo_unit_promedio
+
         # Precio más reciente disponible hasta fecha_actual
         asset_prices = precios[precios['Activo'] == asset]
         available    = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_actual)]
         if available.empty:
             continue
 
-        current_price  = available.iloc[-1]['Precio']
-        valor_actual   = current_nominals * current_price
-        ganancia_no_r  = valor_actual - total_invested
+        current_price = available.iloc[-1]['Precio']
+        valor_actual  = current_nominals * current_price
+        ganancia_no_r = valor_actual - costo_posicion
 
         portfolio_data.append({
-            'Activo':                 asset,
-            'Nominales':              current_nominals,
-            'Precio Actual':          current_price,
-            '_Valor Actual':          valor_actual,      # interno para métricas
-            'Costo':                  total_invested,
-            'Amortizaciones':         total_amort,
-            'Cupones':                total_cupones,
-            'Dividendos':             total_dividendos,
+            'Activo':                  asset,
+            'Nominales':               current_nominals,
+            'Precio Actual':           current_price,
+            '_Valor Actual':           valor_actual,
+            'Costo':                   costo_posicion,
+            'Amortizaciones':          total_amort,
+            'Cupones':                 total_cupones,
+            'Dividendos':              total_dividendos,
             'Ganancias no Realizadas': ganancia_no_r,
         })
 
@@ -287,15 +299,14 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
                 (asset_ops['Fecha'] <= pd.to_datetime(fecha_fin))
             ]
 
-        # Acumulados hasta inicio
-        nom_inicio = inv_inicio = sales_inicio = divcup_inicio = 0
+        # Acumulados hasta inicio  (en base a precios de mercado, no costo)
+        nom_inicio = sales_inicio = divcup_inicio = 0
         ops_until_inicio = ops_since_reset[ops_since_reset['Fecha'] <= pd.to_datetime(fecha_inicio)]
 
         for _, op in ops_until_inicio.iterrows():
             tipo = op['Tipo'].strip()
             if tipo == 'Compra':
                 nom_inicio   += op['Cantidad']
-                inv_inicio   += op['Monto']
             elif tipo == 'Venta':
                 nom_inicio   -= op['Cantidad']
                 sales_inicio += op['Monto']
@@ -303,10 +314,9 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
                 divcup_inicio += op['Monto']
 
         # Acumulados hasta fin
-        nom_fin     = nom_inicio
-        inv_fin     = inv_inicio
-        sales_fin   = sales_inicio
-        divcup_fin  = divcup_inicio
+        nom_fin    = nom_inicio
+        sales_fin  = sales_inicio
+        divcup_fin = divcup_inicio
 
         ops_en_rango = ops_since_reset[
             (ops_since_reset['Fecha'] >= pd.to_datetime(fecha_inicio)) &
@@ -318,7 +328,6 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
             tipo = op['Tipo'].strip()
             if tipo == 'Compra':
                 nom_fin            += op['Cantidad']
-                inv_fin            += op['Monto']
                 compras_en_periodo += op['Monto']
             elif tipo == 'Venta':
                 nom_fin   -= op['Cantidad']
