@@ -996,7 +996,7 @@ def main():
     # ── Hero card ─────────────────────────────────────────────────────────────
     # Encabezado principal con nombre de la app y fecha, estilo "Tu dinero hoy"
     st.markdown(
-        f'''<div style="background:#1B2333;border-radius:12px;
+        f'''<div style="background:#1A4B9B;border-radius:12px;
                         padding:1.2rem 1.8rem;margin-bottom:0.5rem;
                         display:flex;align-items:center;justify-content:space-between;">
             <div>
