@@ -72,6 +72,19 @@ def load_data(filename='operaciones.xlsx'):
             subset=['Fecha', 'Tipo', 'Activo', 'Monto']
         )
 
+        # C5: descartar Compra/Venta sin Nominales y avisar al usuario
+        mask_bs  = operaciones_mapped['Tipo'].isin(['Compra', 'Venta'])
+        invalid  = operaciones_mapped[mask_bs & operaciones_mapped['Cantidad'].isna()]
+        if not invalid.empty:
+            activos_inv = ', '.join(invalid['Activo'].dropna().unique())
+            st.warning(
+                f"⚠️ Se ignoraron {len(invalid)} fila(s) de Compra/Venta sin Nominales "
+                f"({activos_inv}). Verificar el Excel."
+            )
+        operaciones_mapped = operaciones_mapped[
+            ~(mask_bs & operaciones_mapped['Cantidad'].isna())
+        ]
+
         # Cargar hoja Precios
         precios = pd.read_excel(filename, sheet_name='Precios')
         fecha_col = precios.columns[0]
@@ -179,10 +192,45 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
         else:
             ops = asset_ops_until[asset_ops_until['Fecha'] > last_reset_date]
 
+        # ── Precio más reciente (necesario también para C4) ──────────────
+        asset_prices = precios[precios['Activo'] == asset].sort_values('Fecha')
+        available    = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_actual)]
+        if available.empty:
+            continue
+
+        # ── C4: Detectar ventas sin compra previa ────────────────────────
+        # Si el total de ventas supera el total de compras post-reset,
+        # se infiere una compra anterior al inicio de la base de datos.
+        nota = ''
+        buys_q  = ops[ops['Tipo'].str.strip() == 'Compra']['Cantidad'].sum()
+        sells_q = ops[ops['Tipo'].str.strip() == 'Venta']['Cantidad'].sum()
+        buys_q  = buys_q  if not pd.isna(buys_q)  else 0
+        sells_q = sells_q if not pd.isna(sells_q) else 0
+        deficit = sells_q - buys_q
+        if deficit > 0:
+            oldest_row   = asset_prices.iloc[0]
+            oldest_price = oldest_row['Precio']
+            oldest_date  = oldest_row['Fecha']
+            synthetic    = pd.DataFrame([{
+                'Fecha':    oldest_date,
+                'Tipo':     'Compra',
+                'Activo':   asset,
+                'Cantidad': deficit,
+                'Precio':   oldest_price,
+                'Monto':    deficit * oldest_price,
+            }])
+            ops  = pd.concat([synthetic, ops]).sort_values('Fecha').reset_index(drop=True)
+            nota = (
+                f'⚠️ {asset}: compra de origen no registrada — se estimaron '
+                f'{deficit:.0f} nominales al precio más antiguo disponible '
+                f'(${oldest_price:.2f} al {oldest_date.strftime("%d/%m/%Y")}). '
+                f'Probable operación anterior al inicio de la base de datos.'
+            )
+
         # ── Costo Promedio Ponderado ──────────────────────────────────────
-        # costo_unit_promedio = costo total acumulado / nominales acumulados
-        # En Compra: se recalcula ponderando el lote nuevo con la posición previa
-        # En Venta:  los nominales bajan pero el costo unitario no cambia
+        # En Compra: se recalcula ponderando el lote nuevo con la posición previa.
+        # En Venta:  los nominales bajan pero el costo unitario no cambia.
+        # Amortizaciones: NO ajustan el costo (estándar broker argentino).
         current_nominals    = 0
         costo_unit_promedio = 0.0
         total_amort         = 0
@@ -197,37 +245,22 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
                 costo_unit_promedio = (costo_prev + op['Monto']) / current_nominals
             elif tipo == 'Venta':
                 current_nominals -= op['Cantidad']
-                # costo_unit_promedio permanece igual en ventas parciales
             else:
                 categoria = _clasificar_operacion(tipo)
                 if categoria == 'amortizacion':
-                    total_amort += op['Monto']
-                    # El Costo NO se ajusta: el precio dirty ya cae al pagar la
-                    # amortización, reflejando la devolución de capital en
-                    # Ganancias no Realizadas. Así el usuario puede verificar:
-                    # Ganancia Total = G.no Realizadas + Amortizaciones + Cupones + Dividendos
+                    total_amort      += op['Monto']
                 elif categoria == 'cupon':
                     total_cupones    += op['Monto']
                 elif categoria == 'dividendo':
                     total_dividendos += op['Monto']
 
-        # Solo activos con nominales positivos
         if current_nominals <= 0:
             continue
 
-        # Costo de la posición actual = nominales × costo unitario promedio
         costo_posicion = current_nominals * costo_unit_promedio
-
-        # Precio más reciente disponible hasta fecha_actual
-        asset_prices = precios[precios['Activo'] == asset]
-        available    = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_actual)]
-        if available.empty:
-            continue
-
-        current_price = available.iloc[-1]['Precio']
-        valor_actual  = current_nominals * current_price
-        ganancia_no_r = valor_actual - costo_posicion
-
+        current_price  = available.iloc[-1]['Precio']
+        valor_actual   = current_nominals * current_price
+        ganancia_no_r  = valor_actual - costo_posicion
         ganancia_total = ganancia_no_r + total_amort + total_cupones + total_dividendos
 
         portfolio_data.append({
@@ -241,6 +274,7 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
             'Dividendos':              total_dividendos,
             'Ganancias no Realizadas': ganancia_no_r,
             'Ganancia Total':          ganancia_total,
+            '_nota':                   nota,
         })
 
     return pd.DataFrame(portfolio_data)
@@ -262,65 +296,26 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
     for asset in assets:
         asset_ops = operaciones[operaciones['Activo'] == asset].sort_values('Fecha')
 
-        # PASO 1: ¿Tuvo nominales positivos en el período?
-        had_positive = False
-        temp = 0
-        for _, op in asset_ops.iterrows():
-            if op['Fecha'] > pd.to_datetime(fecha_fin):
-                break
-            if op['Tipo'].strip() == 'Compra':
-                temp += op['Cantidad']
-            elif op['Tipo'].strip() == 'Venta':
-                temp -= op['Cantidad']
-            if (op['Fecha'] >= pd.to_datetime(fecha_inicio) and
-                    op['Fecha'] <= pd.to_datetime(fecha_fin) and
-                    temp > 0):
-                had_positive = True
-                break
+        # C1/C6: Último reset hasta fecha_fin — mismo criterio que Sección 1.
+        # Detecta resets DENTRO del período (no solo antes de fecha_inicio).
+        ops_until_fin   = asset_ops[asset_ops['Fecha'] <= pd.to_datetime(fecha_fin)]
+        last_reset_date = _find_last_reset(ops_until_fin)
 
-        if not had_positive:
-            temp_inicio = 0
-            for _, op in asset_ops.iterrows():
-                if op['Fecha'] >= pd.to_datetime(fecha_inicio):
-                    break
-                if op['Tipo'].strip() == 'Compra':
-                    temp_inicio += op['Cantidad']
-                elif op['Tipo'].strip() == 'Venta':
-                    temp_inicio -= op['Cantidad']
-            if temp_inicio > 0:
-                had_positive = True
-
-        if not had_positive:
-            continue
-
-        # PASO 2: Último reset ANTES o EN el inicio del período
-        running = 0
-        last_reset_date = None
-        for _, op in asset_ops.iterrows():
-            if op['Fecha'] > pd.to_datetime(fecha_inicio):
-                break
-            prev = running
-            if op['Tipo'].strip() == 'Compra':
-                running += op['Cantidad']
-            elif op['Tipo'].strip() == 'Venta':
-                running -= op['Cantidad']
-            if prev > 0 and running <= 0:
-                last_reset_date = op['Fecha']
-                running = 0
-
-        # PASO 3: Operaciones desde reset hasta fecha_fin
         if last_reset_date is None:
-            ops_since_reset = asset_ops[asset_ops['Fecha'] <= pd.to_datetime(fecha_fin)]
+            ops_since_reset = ops_until_fin
         else:
-            ops_since_reset = asset_ops[
-                (asset_ops['Fecha'] > last_reset_date) &
-                (asset_ops['Fecha'] <= pd.to_datetime(fecha_fin))
-            ]
+            ops_since_reset = ops_until_fin[ops_until_fin['Fecha'] > last_reset_date]
 
-        # Acumulados hasta inicio  (ops ESTRICTAMENTE antes de fecha_inicio)
+        # Acumulados hasta inicio (ops ESTRICTAMENTE antes de fecha_inicio)
+        ops_until_inicio = ops_since_reset[
+            ops_since_reset['Fecha'] < pd.to_datetime(fecha_inicio)
+        ]
+        ops_en_rango = ops_since_reset[
+            (ops_since_reset['Fecha'] >= pd.to_datetime(fecha_inicio)) &
+            (ops_since_reset['Fecha'] <= pd.to_datetime(fecha_fin))
+        ]
+
         nom_inicio = sales_inicio = divcup_inicio = 0
-        ops_until_inicio = ops_since_reset[ops_since_reset['Fecha'] < pd.to_datetime(fecha_inicio)]
-
         for _, op in ops_until_inicio.iterrows():
             tipo = op['Tipo'].strip()
             if tipo == 'Compra':
@@ -331,17 +326,16 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
             elif _clasificar_operacion(tipo):
                 divcup_inicio += op['Monto']
 
-        # Acumulados hasta fin
+        # Omitir activos sin actividad relevante en el período
+        if nom_inicio <= 0 and ops_en_rango.empty:
+            continue
+
+        # Acumulados en el período
         nom_fin    = nom_inicio
         sales_fin  = sales_inicio
         divcup_fin = divcup_inicio
-
-        ops_en_rango = ops_since_reset[
-            (ops_since_reset['Fecha'] >= pd.to_datetime(fecha_inicio)) &
-            (ops_since_reset['Fecha'] <= pd.to_datetime(fecha_fin))
-        ]
-
         compras_en_periodo = 0
+
         for _, op in ops_en_rango.iterrows():
             tipo = op['Tipo'].strip()
             if tipo == 'Compra':
@@ -353,32 +347,33 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
             elif _clasificar_operacion(tipo):
                 divcup_fin += op['Monto']
 
-        # Precios inicio / fin
-        asset_prices = precios[precios['Activo'] == asset]
+        # Precios inicio / fin (sort garantiza iloc[-1] correcto — M4)
+        asset_prices  = precios[precios['Activo'] == asset].sort_values('Fecha')
         avail_inicio  = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_inicio)]
         avail_fin     = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_fin)]
         precio_inicio = avail_inicio.iloc[-1]['Precio'] if not avail_inicio.empty else 0
         precio_fin    = avail_fin.iloc[-1]['Precio']    if not avail_fin.empty    else 0
 
-        # Valor al inicio del período (solo lo que ya estaba en cartera)
-        valor_inicio = nom_inicio * precio_inicio if nom_inicio > 0 else 0
+        # Filtrar activos con nominales finales negativos (error de datos, igual que Sección 1)
+        if nom_fin < 0:
+            continue
 
+        valor_inicio       = nom_inicio * precio_inicio if nom_inicio > 0 else 0
         valor_fin          = nom_fin * precio_fin
         div_cup_en_periodo = divcup_fin - divcup_inicio
         ventas_en_periodo  = sales_fin  - sales_inicio
-        # Ganancia = variación de valor + flujos cobrados − nuevo capital ingresado
         ganancia_total     = (valor_fin - valor_inicio - compras_en_periodo) + div_cup_en_periodo + ventas_en_periodo
 
         evolution_data.append({
-            'Activo':              asset,
-            'Nominales':           nom_fin,
-            'Precio Actual':       precio_fin,
-            'Valor Actual':        valor_fin,
-            'Valor al Inicio':     valor_inicio,
-            'Compras':             compras_en_periodo,
-            'Ventas':              ventas_en_periodo,
-            'Amort / Cup / Div':   div_cup_en_periodo,
-            'Ganancia Total':      ganancia_total,
+            'Activo':            asset,
+            'Nominales':         nom_fin,
+            'Precio Actual':     precio_fin,
+            'Valor Actual':      valor_fin,
+            'Valor al Inicio':   valor_inicio,
+            'Compras':           compras_en_periodo,
+            'Ventas':            ventas_en_periodo,
+            'Amort / Cup / Div': div_cup_en_periodo,
+            'Ganancia Total':    ganancia_total,
         })
 
     return pd.DataFrame(evolution_data)
@@ -396,28 +391,14 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
 
     asset_ops = operaciones[operaciones['Activo'] == activo].sort_values('Fecha')
 
-    # Último reset antes o en el inicio
-    running = 0
-    last_reset_date = None
-    for _, op in asset_ops.iterrows():
-        if op['Fecha'] > pd.to_datetime(fecha_inicio):
-            break
-        prev = running
-        if op['Tipo'].strip() == 'Compra':
-            running += op['Cantidad']
-        elif op['Tipo'].strip() == 'Venta':
-            running -= op['Cantidad']
-        if prev > 0 and running <= 0:
-            last_reset_date = op['Fecha']
-            running = 0
+    # C1: Último reset hasta fecha_fin — mismo criterio que Sección 1 y Sección 2.
+    ops_until_fin_d = asset_ops[asset_ops['Fecha'] <= pd.to_datetime(fecha_fin)]
+    last_reset_date = _find_last_reset(ops_until_fin_d)
 
     if last_reset_date is None:
-        ops_since_reset = asset_ops[asset_ops['Fecha'] <= pd.to_datetime(fecha_fin)]
+        ops_since_reset = ops_until_fin_d
     else:
-        ops_since_reset = asset_ops[
-            (asset_ops['Fecha'] > last_reset_date) &
-            (asset_ops['Fecha'] <= pd.to_datetime(fecha_fin))
-        ]
+        ops_since_reset = ops_until_fin_d[ops_until_fin_d['Fecha'] > last_reset_date]
 
     # Nominales al inicio (ops ESTRICTAMENTE antes de fecha_inicio → sin doble conteo)
     nom_inicio = 0
@@ -661,6 +642,18 @@ def main():
             column_config={
                 "Activo": st.column_config.TextColumn("Activo", width="medium"),
             }
+        )
+
+        # ── Notas sobre compras estimadas (C4) ───────────────────────────
+        if '_nota' in portfolio_df.columns:
+            for nota in portfolio_df[portfolio_df['_nota'] != '']['_nota']:
+                st.caption(nota)
+
+        # ── C3: aclaración sobre flujos pre-reset ────────────────────────
+        st.caption(
+            "ℹ️ Amortizaciones, Cupones y Dividendos corresponden únicamente a los flujos "
+            "cobrados desde la apertura de la posición actual. Los flujos de posiciones "
+            "anteriores del mismo activo (antes del último reset) se reflejan en la Sección 2."
         )
 
         # ── Descarga ─────────────────────────
