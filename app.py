@@ -11,6 +11,7 @@ Autor: Santiago Aronson
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import warnings
 
@@ -1270,6 +1271,157 @@ def main():
             'Ganancia Total':           f"{_fmt_money(ganancia_cash, moneda)} {pct_str_cash}",
         }])
         st.dataframe(summary_cash, use_container_width=True, hide_index=True)
+
+        # ── Gráfico: Valor Total vs. Neto Invertido ───────────────────────────
+        try:
+            from collections import defaultdict
+
+            ops_sorted_g = ops_cash.dropna(subset=['Fecha']).sort_values('Fecha')
+
+            # Precios enriquecidos con live prices
+            precios_g = precios.copy()
+            if live_prices:
+                today_g = pd.Timestamp.today().normalize()
+                rows_live = [{'Activo': a, 'Fecha': today_g, 'Precio': float(p)}
+                             for a, p in live_prices.items() if pd.notna(p)]
+                if rows_live:
+                    precios_g = pd.concat([precios_g, pd.DataFrame(rows_live)]) \
+                                  .drop_duplicates(subset=['Activo', 'Fecha'], keep='last')
+
+            # Fechas del gráfico: union precios + transacciones en el rango
+            fi_g = pd.to_datetime(fecha_inicio)
+            ff_g = pd.to_datetime(fecha_fin)
+            price_dates_g = precios_g[(precios_g['Fecha'] >= fi_g) & (precios_g['Fecha'] <= ff_g)]['Fecha'].tolist()
+            tx_dates_g    = ops_sorted_g[(ops_sorted_g['Fecha'] >= fi_g) & (ops_sorted_g['Fecha'] <= ff_g)]['Fecha'].tolist()
+            chart_dates_g = sorted(set(price_dates_g) | set(tx_dates_g))
+            if not chart_dates_g:
+                chart_dates_g = [fi_g, ff_g]
+
+            # Step function: holdings acumulados por activo
+            cum_h_g = defaultdict(float)
+            h_steps_g = defaultdict(list)
+            for _, row in ops_sorted_g.iterrows():
+                tipo = row.get('Tipo', np.nan)
+                asset = row.get('Activo', np.nan)
+                if pd.isna(tipo) or pd.isna(asset):
+                    continue
+                t = str(tipo).strip()
+                qty = float(row.get('Cantidad', 0) or 0)
+                if t == 'Compra':
+                    cum_h_g[asset] += qty
+                elif t == 'Venta':
+                    cum_h_g[asset] -= qty
+                h_steps_g[asset].append((row['Fecha'], cum_h_g[asset]))
+
+            h_dfs_g = {
+                a: pd.DataFrame(steps, columns=['Fecha', 'H'])
+                         .set_index('Fecha').groupby(level=0).last()
+                for a, steps in h_steps_g.items()
+            }
+
+            def _h_at(asset, d):
+                df = h_dfs_g.get(asset)
+                if df is None or df.empty:
+                    return 0.0
+                r = df[df.index <= d]
+                return float(r.iloc[-1]['H']) if not r.empty else 0.0
+
+            # Step function: cash acumulado
+            cash_cum_g = 0.0
+            cash_steps_g = []
+            for _, row in ops_sorted_g.iterrows():
+                d = row['Fecha']
+                if pd.isna(d):
+                    continue
+                fx = _get_fx(fx_rates, d) if moneda == 'ARS' else 1.0
+                dep = float(row[col_dep]) if has_cash and col_dep and pd.notna(row.get(col_dep, np.nan)) else 0.0
+                ret = float(row[col_ret]) if has_cash and col_ret and pd.notna(row.get(col_ret, np.nan)) else 0.0
+                cash_cum_g += (dep - ret) * fx
+                tipo = row.get('Tipo', np.nan)
+                if pd.notna(tipo):
+                    monto = _get_monto(row, moneda, fx_rates)
+                    cash_cum_g += -monto if str(tipo).strip() == 'Compra' else monto
+                cash_steps_g.append((d, cash_cum_g))
+
+            cash_sdf_g = (pd.DataFrame(cash_steps_g, columns=['Fecha', 'Cash'])
+                            .set_index('Fecha').groupby(level=0).last()
+                          if cash_steps_g else pd.DataFrame(columns=['Cash']))
+
+            def _cash_at_g(d):
+                r = cash_sdf_g[cash_sdf_g.index <= d]
+                return float(r.iloc[-1]['Cash']) if not r.empty else 0.0
+
+            # Step function: neto invertido (depósitos − retiros)
+            ni_cum_g = 0.0
+            ni_steps_g = []
+            for _, row in ops_sorted_g.iterrows():
+                d = row['Fecha']
+                if not has_cash or pd.isna(d):
+                    continue
+                dep = float(row[col_dep]) if pd.notna(row.get(col_dep, np.nan)) else 0.0
+                ret = float(row[col_ret]) if pd.notna(row.get(col_ret, np.nan)) else 0.0
+                if dep != 0 or ret != 0:
+                    fx = _get_fx(fx_rates, d) if moneda == 'ARS' else 1.0
+                    ni_cum_g += (dep - ret) * fx
+                    ni_steps_g.append((d, ni_cum_g))
+
+            ni_sdf_g = (pd.DataFrame(ni_steps_g, columns=['Fecha', 'NI'])
+                          .set_index('Fecha').groupby(level=0).last()
+                        if ni_steps_g else pd.DataFrame(columns=['NI']))
+
+            def _ni_at_g(d):
+                r = ni_sdf_g[ni_sdf_g.index <= d]
+                return float(r.iloc[-1]['NI']) if not r.empty else 0.0
+
+            # Construir serie temporal
+            assets_g = [a for a in ops_cash['Activo'].dropna().unique() if pd.notna(a)]
+            chart_rows_g = []
+            for d in chart_dates_g:
+                bv = 0.0
+                for asset in assets_g:
+                    h = _h_at(asset, d)
+                    if h > 0:
+                        ap = precios_g[(precios_g['Activo'] == asset) & (precios_g['Fecha'] <= d)]
+                        if not ap.empty:
+                            price = float(ap.iloc[-1]['Precio'])
+                            if moneda == 'ARS':
+                                price *= _get_fx(fx_rates, d)
+                            bv += h * price
+                chart_rows_g.append({
+                    'Fecha':          d,
+                    'Valor Total':    bv + _cash_at_g(d),
+                    'Neto Invertido': _ni_at_g(d),
+                })
+
+            df_chart = pd.DataFrame(chart_rows_g)
+            lbl_y = 'ARS' if moneda == 'ARS' else 'USD'
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=df_chart['Fecha'], y=df_chart['Neto Invertido'],
+                fill='tozeroy', name='Neto Invertido',
+                mode='lines', line=dict(color='#93C5FD', width=1.5),
+                fillcolor='rgba(147, 197, 253, 0.25)',
+            ))
+            fig.add_trace(go.Scatter(
+                x=df_chart['Fecha'], y=df_chart['Valor Total'],
+                name='Valor Total (tít+cash)',
+                mode='lines', line=dict(color='#1A4B9B', width=2.5),
+            ))
+            fig.update_layout(
+                hovermode='x unified',
+                xaxis_title=None,
+                yaxis_title=lbl_y,
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
+                height=320,
+                margin=dict(l=0, r=10, t=30, b=0),
+                plot_bgcolor='#F0F2F6',
+                paper_bgcolor='transparent',
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        except Exception as e:
+            st.caption(f"⚠️ No se pudo generar el gráfico: {e}")
 
         csv_evo = evolution_df.to_csv(index=False)
         st.download_button(
