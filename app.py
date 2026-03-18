@@ -1185,6 +1185,61 @@ def main():
         st.dataframe(evo_display, use_container_width=True, hide_index=True,
                      column_config={"Activo": st.column_config.TextColumn("Activo", width="medium")})
 
+        # ── Tabla cash: Valor Inicial / Flujos Netos / Valor Final / Ganancia ──
+        ops_cash = operaciones.copy()
+        ops_cash['Fecha'] = pd.to_datetime(ops_cash['Fecha'], errors='coerce')
+
+        def _get_saldo_at(df, fecha):
+            """Último valor de 'Invertido' en o antes de fecha."""
+            rows = df[df['Fecha'] <= pd.to_datetime(fecha)]['Invertido'].dropna()
+            return float(rows.iloc[-1]) if not rows.empty else 0.0
+
+        def _fx_cash(val, fecha):
+            """Convierte USD a ARS si corresponde."""
+            if moneda == 'ARS':
+                return val * _get_fx(fx_rates, pd.to_datetime(fecha))
+            return val
+
+        saldo_inicio_usd = _get_saldo_at(ops_cash, fecha_inicio)
+        saldo_fin_usd    = _get_saldo_at(ops_cash, fecha_fin)
+
+        ops_periodo = ops_cash[
+            (ops_cash['Fecha'] >= pd.to_datetime(fecha_inicio)) &
+            (ops_cash['Fecha'] <= pd.to_datetime(fecha_fin))
+        ]
+        dep_periodo  = ops_periodo['Deposito cash'].fillna(0).sum()
+        ret_periodo  = ops_periodo['Retiro Cash'].fillna(0).sum()
+        flujos_netos_usd = dep_periodo - ret_periodo
+
+        titulos_inicio = evolution_df['Valor al Inicio'].sum()
+        titulos_fin    = evolution_df['Valor Actual'].sum()
+
+        if moneda == 'ARS':
+            fx_i = _get_fx(fx_rates, pd.to_datetime(fecha_inicio))
+            fx_f = _get_fx(fx_rates, pd.to_datetime(fecha_fin))
+            saldo_inicio  = saldo_inicio_usd * fx_i
+            saldo_fin     = saldo_fin_usd    * fx_f
+            flujos_netos  = flujos_netos_usd * fx_f   # flujos dentro del período → TC de fin
+        else:
+            saldo_inicio  = saldo_inicio_usd
+            saldo_fin     = saldo_fin_usd
+            flujos_netos  = flujos_netos_usd
+
+        valor_inicial_total = titulos_inicio + saldo_inicio
+        valor_final_total   = titulos_fin    + saldo_fin
+        ganancia_cash       = valor_final_total - valor_inicial_total - flujos_netos
+        base_cash           = valor_inicial_total + max(flujos_netos, 0)
+        pct_cash            = (ganancia_cash / base_cash * 100) if base_cash > 0 else 0
+        pct_str_cash        = f"({'▼' if pct_cash < 0 else '▲'} {abs(pct_cash):.1f}%)"
+
+        summary_cash = pd.DataFrame([{
+            'Valor Inicial (tít+cash)': _fmt_money(valor_inicial_total, moneda),
+            'Flujos Netos':             _fmt_money(flujos_netos, moneda),
+            'Valor Final (tít+cash)':   _fmt_money(valor_final_total, moneda),
+            'Ganancia Total':           f"{_fmt_money(ganancia_cash, moneda)} {pct_str_cash}",
+        }])
+        st.dataframe(summary_cash, use_container_width=True, hide_index=True)
+
         csv_evo = evolution_df.to_csv(index=False)
         st.download_button(
             label="📥 Descargar CSV Evolución",
