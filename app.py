@@ -144,12 +144,12 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
       - Los nominales NO se modifican: el precio dirty ya cotiza contra el
         VNO (Valor Nominal Original), por lo que Valor Actual = nom × precio_dirty
         es correcto sin tocar los nominales.
-      - El monto cobrado se trata como devolución parcial de capital:
-        se descuenta del costo unitario promedio (cpu -= amort / nominales).
-        Esto reduce el Costo de la posición y corrige las Ganancias no Realizadas.
-      - Limitación conocida: sin el % de amortización no es posible separar
-        la devolución de capital puro de la ganancia/pérdida realizada
-        (prima/descuento). La columna Amortizaciones muestra el cash cobrado.
+      - El Costo NO se ajusta por amortizaciones (estándar de bancos y brokers):
+        Costo = suma de compras (CPP). La caída del precio dirty al momento
+        de la amortización ya refleja la devolución de capital en Ganancias
+        no Realizadas. La columna Amortizaciones muestra el cash cobrado.
+      - Fórmula verificable por el usuario:
+        Ganancia Total = Ganancias no Realizadas + Amortizaciones + Cupones + Dividendos
 
     Columnas de salida:
         Activo | Nominales | Precio Actual | _Valor Actual (interno) |
@@ -202,14 +202,10 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
                 categoria = _clasificar_operacion(tipo)
                 if categoria == 'amortizacion':
                     total_amort += op['Monto']
-                    # Devolución parcial de capital: reduce el costo unitario promedio.
-                    # No se reduce current_nominals porque el precio dirty ya cotiza
-                    # contra el VNO original (Valor Nominal Original).
-                    if current_nominals > 0:
-                        costo_unit_promedio = max(
-                            0.0,
-                            costo_unit_promedio - op['Monto'] / current_nominals
-                        )
+                    # El Costo NO se ajusta: el precio dirty ya cae al pagar la
+                    # amortización, reflejando la devolución de capital en
+                    # Ganancias no Realizadas. Así el usuario puede verificar:
+                    # Ganancia Total = G.no Realizadas + Amortizaciones + Cupones + Dividendos
                 elif categoria == 'cupon':
                     total_cupones    += op['Monto']
                 elif categoria == 'dividendo':
