@@ -1189,27 +1189,29 @@ def main():
         ops_cash = operaciones.copy()
         ops_cash['Fecha'] = pd.to_datetime(ops_cash['Fecha'], errors='coerce')
 
-        def _get_saldo_at(df, fecha):
-            """Último valor de 'Invertido' en o antes de fecha."""
-            rows = df[df['Fecha'] <= pd.to_datetime(fecha)]['Invertido'].dropna()
+        # Detectar nombres de columnas de cash (tolerante a variaciones)
+        cols_ops = ops_cash.columns.tolist()
+        col_saldo   = next((c for c in cols_ops if 'invertido' in c.lower() or 'saldo' in c.lower()), None)
+        col_dep     = next((c for c in cols_ops if 'deposit' in c.lower()), None)
+        col_ret     = next((c for c in cols_ops if 'retiro' in c.lower()), None)
+        has_cash    = col_saldo and col_dep and col_ret
+
+        def _get_saldo_at(df, fecha, col):
+            rows = df[df['Fecha'] <= pd.to_datetime(fecha)][col].dropna()
             return float(rows.iloc[-1]) if not rows.empty else 0.0
 
-        def _fx_cash(val, fecha):
-            """Convierte USD a ARS si corresponde."""
-            if moneda == 'ARS':
-                return val * _get_fx(fx_rates, pd.to_datetime(fecha))
-            return val
-
-        saldo_inicio_usd = _get_saldo_at(ops_cash, fecha_inicio)
-        saldo_fin_usd    = _get_saldo_at(ops_cash, fecha_fin)
-
-        ops_periodo = ops_cash[
-            (ops_cash['Fecha'] >= pd.to_datetime(fecha_inicio)) &
-            (ops_cash['Fecha'] <= pd.to_datetime(fecha_fin))
-        ]
-        dep_periodo  = ops_periodo['Deposito cash'].fillna(0).sum()
-        ret_periodo  = ops_periodo['Retiro Cash'].fillna(0).sum()
-        flujos_netos_usd = dep_periodo - ret_periodo
+        if has_cash:
+            saldo_inicio_usd = _get_saldo_at(ops_cash, fecha_inicio, col_saldo)
+            saldo_fin_usd    = _get_saldo_at(ops_cash, fecha_fin,    col_saldo)
+            ops_periodo = ops_cash[
+                (ops_cash['Fecha'] >= pd.to_datetime(fecha_inicio)) &
+                (ops_cash['Fecha'] <= pd.to_datetime(fecha_fin))
+            ]
+            dep_periodo      = ops_periodo[col_dep].fillna(0).sum()
+            ret_periodo      = ops_periodo[col_ret].fillna(0).sum()
+            flujos_netos_usd = dep_periodo - ret_periodo
+        else:
+            saldo_inicio_usd = saldo_fin_usd = flujos_netos_usd = 0.0
 
         titulos_inicio = evolution_df['Valor al Inicio'].sum()
         titulos_fin    = evolution_df['Valor Actual'].sum()
@@ -1238,6 +1240,8 @@ def main():
             'Valor Final (tít+cash)':   _fmt_money(valor_final_total, moneda),
             'Ganancia Total':           f"{_fmt_money(ganancia_cash, moneda)} {pct_str_cash}",
         }])
+        if not has_cash:
+            st.caption("ℹ️ Sin columnas de cash (Deposito / Retiro / Invertido) en el Excel — valores de cash en $0.")
         st.dataframe(summary_cash, use_container_width=True, hide_index=True)
 
         csv_evo = evolution_df.to_csv(index=False)
