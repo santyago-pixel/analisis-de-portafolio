@@ -228,6 +228,8 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
         valor_actual  = current_nominals * current_price
         ganancia_no_r = valor_actual - costo_posicion
 
+        ganancia_total = ganancia_no_r + total_amort + total_cupones + total_dividendos
+
         portfolio_data.append({
             'Activo':                  asset,
             'Nominales':               current_nominals,
@@ -238,6 +240,7 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
             'Cupones':                 total_cupones,
             'Dividendos':              total_dividendos,
             'Ganancias no Realizadas': ganancia_no_r,
+            'Ganancia Total':          ganancia_total,
         })
 
     return pd.DataFrame(portfolio_data)
@@ -620,7 +623,8 @@ def main():
         # Columnas visibles (excluimos la interna _Valor Actual)
         cols_display = [
             'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
-            'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancias no Realizadas'
+            'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancias no Realizadas',
+            'Ganancia Total'
         ]
 
         display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].copy()
@@ -632,6 +636,7 @@ def main():
         display_df['Cupones']                 = display_df['Cupones'].apply(_fmt_money)
         display_df['Dividendos']              = display_df['Dividendos'].apply(_fmt_money)
         display_df['Ganancias no Realizadas'] = display_df['Ganancias no Realizadas'].apply(_fmt_money)
+        display_df['Ganancia Total']          = display_df['Ganancia Total'].apply(_fmt_money)
 
         st.dataframe(
             display_df,
