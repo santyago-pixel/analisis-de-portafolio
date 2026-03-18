@@ -247,12 +247,21 @@ def load_data(filename='operaciones.xlsx'):
             operaciones['Valor ARS'] if 'Valor ARS' in operaciones.columns else np.nan
         )
 
+        # Columnas de cash (pasan tal cual si existen)
+        for src, dst in [('Deposito cash', 'Deposito cash'),
+                         ('Retiro Cash',   'Retiro Cash'),
+                         ('Invertido',     'Invertido')]:
+            operaciones_mapped[dst] = operaciones[src] if src in operaciones.columns else np.nan
+
         # Me2: normalizar capitalización para que 'compra', 'VENTA', etc. funcionen
         operaciones_mapped['Tipo']   = operaciones_mapped['Tipo'].str.strip().str.title()
         operaciones_mapped['Activo'] = operaciones_mapped['Activo'].str.strip()
-        operaciones_mapped = operaciones_mapped.dropna(
-            subset=['Fecha', 'Tipo', 'Activo', 'Monto']
-        )
+        # Mantener filas de trading (Tipo+Activo+Monto completos) Y filas de cash puro
+        # (depósitos/retiros sin Activo, que tienen Invertido). Las filas de cash son
+        # ignoradas por el código de portfolio (filtra por Activo específico).
+        es_trading  = operaciones_mapped[['Fecha', 'Tipo', 'Activo', 'Monto']].notna().all(axis=1)
+        es_cash     = operaciones_mapped['Fecha'].notna() & operaciones_mapped['Invertido'].notna()
+        operaciones_mapped = operaciones_mapped[es_trading | es_cash].reset_index(drop=True)
 
         # C5: descartar Compra/Venta sin Nominales y avisar al usuario
         mask_bs  = operaciones_mapped['Tipo'].isin(['Compra', 'Venta'])
