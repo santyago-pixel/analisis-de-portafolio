@@ -25,7 +25,7 @@ st.set_page_config(
     page_title="Análisis de Portafolio",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # ── CSS personalizado ─────────────────────────────────────────────────────────
@@ -47,11 +47,17 @@ html, body, [class*="css"], .stApp, button, input, select, textarea {
 .stApp {
     background-color: #F0F2F6 !important;
 }
+/* Ocultar sidebar completamente */
+[data-testid="stSidebar"]        { display: none !important; }
+[data-testid="collapsedControl"] { display: none !important; }
+/* Centrar contenido principal con márgenes blancos iguales */
 .main .block-container {
     padding-top: 1.5rem !important;
-    padding-left: 2rem !important;
-    padding-right: 2rem !important;
-    max-width: 1400px !important;
+    padding-left: 5rem !important;
+    padding-right: 5rem !important;
+    max-width: 1300px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
 }
 
 /* ══════════════════════════════════════════════
@@ -907,72 +913,44 @@ def _section_header(title, subtitle=None):
 
 
 # ─────────────────────────────────────────────
+# Helpers de presentación
+# ─────────────────────────────────────────────
+_MESES_ES = {
+    'January': 'enero', 'February': 'febrero', 'March': 'marzo',
+    'April': 'abril', 'May': 'mayo', 'June': 'junio',
+    'July': 'julio', 'August': 'agosto', 'September': 'septiembre',
+    'October': 'octubre', 'November': 'noviembre', 'December': 'diciembre',
+}
+
+def _fecha_es(fecha):
+    """Devuelve la fecha formateada con el mes en español."""
+    return f"{fecha.day} de {_MESES_ES[fecha.strftime('%B')]} de {fecha.year}"
+
+
+# ─────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────
 def main():
+    import uuid
 
-    # ── Sidebar ──────────────────────────────
-    with st.sidebar:
-        uploaded_file = st.file_uploader(
-            "Cargar archivo Excel diferente",
-            type=['xlsx', 'xls'],
-            help="Opcional: cargar un Excel diferente a operaciones.xlsx"
-        )
-
-        fecha_actual = st.date_input(
-            "Fecha actual",
-            value=datetime.now().date(),
-            help="Fecha para calcular la composición actual"
-        )
-
-        st.markdown("---")
-        st.subheader("Análisis de Evolución")
-
-        fecha_inicio = st.date_input(
-            "Fecha de Inicio",
-            value=datetime.now().date() - timedelta(days=365),
-            help="Fecha de inicio para el análisis de evolución"
-        )
-
-        fecha_fin = st.date_input(
-            "Fecha de Fin",
-            value=datetime.now().date(),
-            help="Fecha de fin para el análisis de evolución"
-        )
-
-        st.markdown("---")
-        st.subheader("Moneda")
-        moneda = st.radio(
-            "Visualizar en",
-            options=["USD", "ARS"],
-            index=0,
-            horizontal=True,
-            help=(
-                "USD: valores en dólares (precio de mercado).\n"
-                "ARS: valores en pesos argentinos. "
-                "Operaciones al TC efectivo; precios al TC de cierre del día."
-            )
-        )
-
-    # ── Archivo a usar ────────────────────────
-    if uploaded_file is not None:
-        # M5: nombre único por sesión para evitar colisiones entre usuarios
-        import uuid
+    # ── Archivo a usar ─────────────────────────────────────────────────────────
+    # El uploader está al pie de la página. Su contenido se guarda en session_state
+    # para que esté disponible desde el inicio del script en reruns posteriores.
+    filename = 'operaciones.xlsx'
+    if st.session_state.get('upload_bytes'):
         if 'upload_id' not in st.session_state:
             st.session_state.upload_id = uuid.uuid4().hex[:12]
         filename = f"temp_{st.session_state.upload_id}.xlsx"
-        with open(filename, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        st.success(f"📁 Archivo cargado: {uploaded_file.name}")
-    else:
-        filename = 'operaciones.xlsx'
+        with open(filename, 'wb') as f:
+            f.write(st.session_state.upload_bytes)
 
-    # Me1: validar rango de fechas de evolución
-    if fecha_inicio > fecha_fin:
-        st.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
-        return
+    # ── Moneda desde sesión (disponible antes del widget, que se renderiza luego) ─
+    moneda = st.session_state.get('moneda_sel', 'USD')
 
-    # ── Carga de datos ────────────────────────
+    # ── Fecha actual fija = hoy (se muestra en hero card, sin input) ───────────
+    fecha_actual = datetime.now().date()
+
+    # ── Carga de datos ─────────────────────────────────────────────────────────
     operaciones, precios, fx_rates, live_prices, live_fx = load_data(filename)
 
     if operaciones is None or precios is None:
@@ -982,86 +960,87 @@ def main():
         )
         return
 
-    # Advertencia si modo ARS pero no hay tipos de cambio
+    # Validar ARS
     if moneda == 'ARS' and (fx_rates is None or fx_rates.empty):
         st.warning(
-            "⚠️ Modo ARS seleccionado pero no se encontró la columna 'ARS' (tipo de cambio) "
-            "en la hoja Precios. Los valores se mostrarán en USD."
+            "⚠️ Modo ARS: no se encontró columna 'ARS' en Precios. "
+            "Se muestran valores en USD."
         )
         moneda = 'USD'
 
-    # Etiqueta de moneda para mostrar en headers
-    lbl_moneda = "ARS" if moneda == 'ARS' else "USD"
+    lbl_moneda = 'ARS' if moneda == 'ARS' else 'USD'
 
-    # ── Hero card ─────────────────────────────────────────────────────────────
-    # Encabezado principal con nombre de la app y fecha, estilo "Tu dinero hoy"
+    # ── Hero card ──────────────────────────────────────────────────────────────
+    fecha_str = _fecha_es(fecha_actual)
     st.markdown(
-        f'''<div style="background:#1A4B9B;border-radius:12px;
-                        padding:1.2rem 1.8rem;margin-bottom:0.5rem;
-                        display:flex;align-items:center;justify-content:space-between;">
-            <div>
-                <div style="font-size:1.4rem;font-weight:700;color:#FFFFFF;">
-                    Tu Cartera
-                </div>
-                <div style="font-size:0.82rem;color:#9CA3AF;margin-top:2px;">
-                    {fecha_actual.strftime("%d de %B de %Y").capitalize()}
-                </div>
-            </div>
-            <div style="font-size:0.78rem;font-weight:500;color:#FFFFFF;
-                        background:rgba(255,255,255,0.12);padding:4px 12px;
-                        border-radius:20px;border:1px solid rgba(255,255,255,0.35);">
-                {lbl_moneda}
-            </div>
-        </div>''',
+        f'<div style="background:#1A4B9B;border-radius:12px;padding:1.2rem 1.8rem;'
+        f'margin-bottom:0.5rem;display:flex;align-items:center;justify-content:space-between;">'
+        f'<div>'
+        f'<div style="font-size:1.4rem;font-weight:700;color:#FFFFFF;">Tu Cartera</div>'
+        f'<div style="font-size:0.82rem;color:rgba(255,255,255,0.75);margin-top:2px;">{fecha_str}</div>'
+        f'</div>'
+        f'<div style="font-size:0.78rem;font-weight:500;color:#FFFFFF;'
+        f'background:rgba(255,255,255,0.12);padding:4px 12px;'
+        f'border-radius:20px;border:1px solid rgba(255,255,255,0.35);">{lbl_moneda}</div>'
+        f'</div>',
         unsafe_allow_html=True
     )
 
     # ══════════════════════════════════════════
     # SECCIÓN 1 – COMPOSICIÓN ACTUAL
+    # Título y toggle de moneda en la misma fila
     # ══════════════════════════════════════════
+    col_s1, _, col_mon = st.columns([5, 1, 1])
+    with col_s1:
+        _section_header(
+            "Composición Actual de la Cartera",
+            f"Calculado al {fecha_actual.strftime('%d/%m/%Y')} — valores en {lbl_moneda}"
+        )
+    with col_mon:
+        # Espaciador para alinear verticalmente el radio con el título
+        st.markdown('<div style="height:2.1rem;"></div>', unsafe_allow_html=True)
+        moneda = st.radio(
+            'Moneda', ['USD', 'ARS'],
+            horizontal=True,
+            key='moneda_sel',
+            label_visibility='collapsed'
+        )
+    lbl_moneda = 'ARS' if moneda == 'ARS' else 'USD'
+
     portfolio_df = calculate_current_portfolio(
         operaciones, precios, fecha_actual, moneda=moneda, fx_rates=fx_rates,
         live_prices=live_prices, live_fx=live_fx
     )
 
-    _section_header(
-        "Composición Actual de la Cartera",
-        f"Calculado al {fecha_actual.strftime('%d/%m/%Y')} — valores en {lbl_moneda}"
-    )
-
     if portfolio_df.empty:
         st.warning("No hay activos con nominales positivos en la fecha seleccionada.")
     else:
-        # ── Métricas resumen ──────────────────
-        total_valor_mercado  = portfolio_df['_Valor Actual'].sum()
-        total_costo          = portfolio_df['Costo'].sum()
-        total_amort          = portfolio_df['Amortizaciones'].sum()
-        total_cup            = portfolio_df['Cupones'].sum()
-        total_div            = portfolio_df['Dividendos'].sum()
-        total_ganancia_r     = total_amort + total_cup + total_div
-        total_ganancia_no_r  = portfolio_df['Ganancias no Realizadas'].sum()
-        pct_no_r             = (total_ganancia_no_r / total_costo * 100) if total_costo > 0 else 0
+        total_valor_mercado = portfolio_df['_Valor Actual'].sum()
+        total_costo         = portfolio_df['Costo'].sum()
+        total_amort         = portfolio_df['Amortizaciones'].sum()
+        total_cup           = portfolio_df['Cupones'].sum()
+        total_div           = portfolio_df['Dividendos'].sum()
+        total_ganancia_r    = total_amort + total_cup + total_div
+        total_ganancia_no_r = portfolio_df['Ganancias no Realizadas'].sum()
+        pct_no_r            = (total_ganancia_no_r / total_costo * 100) if total_costo > 0 else 0
 
-        # ── Fila de resumen (misma tabla que los activos, una sola fila) ──────
         pct_str = f"({'▼' if pct_no_r < 0 else '▲'} {abs(pct_no_r):.1f}%)"
         summary_row = pd.DataFrame([{
-            'Activos':           len(portfolio_df),
-            'Valor de Mercado':  _fmt_money(total_valor_mercado, moneda),
-            'Costo Total':       _fmt_money(total_costo, moneda),
-            'G. Realizadas':     _fmt_money(total_ganancia_r, moneda),
-            'G. no Realizadas':  f"{_fmt_money(total_ganancia_no_r, moneda)} {pct_str}",
-            'Amortizaciones':    _fmt_money(total_amort, moneda),
-            'Cupones':           _fmt_money(total_cup, moneda),
-            'Dividendos':        _fmt_money(total_div, moneda),
+            'Activos':          len(portfolio_df),
+            'Valor de Mercado': _fmt_money(total_valor_mercado, moneda),
+            'Costo Total':      _fmt_money(total_costo, moneda),
+            'G. Realizadas':    _fmt_money(total_ganancia_r, moneda),
+            'G. no Realizadas': f"{_fmt_money(total_ganancia_no_r, moneda)} {pct_str}",
+            'Amortizaciones':   _fmt_money(total_amort, moneda),
+            'Cupones':          _fmt_money(total_cup, moneda),
+            'Dividendos':       _fmt_money(total_div, moneda),
         }])
         st.dataframe(summary_row, use_container_width=True, hide_index=True)
 
-        # ── Tabla ────────────────────────────
         cols_display = [
             'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
             'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
         ]
-
         display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].copy()
         display_df['Nominales']      = display_df['Nominales'].apply(_fmt_number)
         display_df['Precio Actual']  = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
@@ -1071,29 +1050,17 @@ def main():
         display_df['Cupones']        = display_df['Cupones'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Dividendos']     = display_df['Dividendos'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Ganancia Total'] = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
+        st.dataframe(display_df, use_container_width=True, hide_index=True,
+                     column_config={"Activo": st.column_config.TextColumn("Activo", width="medium")})
 
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Activo": st.column_config.TextColumn("Activo", width="medium"),
-            }
-        )
-
-        # ── Notas sobre compras estimadas (C4) ───────────────────────────
         if '_nota' in portfolio_df.columns:
             for nota in portfolio_df[portfolio_df['_nota'] != '']['_nota']:
                 st.caption(nota)
-
-        # ── C3: aclaración sobre flujos pre-reset ────────────────────────
         st.caption(
             "ℹ️ Amortizaciones, Cupones y Dividendos corresponden únicamente a los flujos "
             "cobrados desde la apertura de la posición actual. Los flujos de posiciones "
             "anteriores del mismo activo (antes del último reset) se reflejan en la Sección 2."
         )
-
-        # ── Descarga ─────────────────────────
         csv = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].to_csv(index=False)
         st.download_button(
             label="📥 Descargar CSV",
@@ -1104,11 +1071,30 @@ def main():
 
     # ══════════════════════════════════════════
     # SECCIÓN 2 – EVOLUCIÓN HISTÓRICA
+    # Título y selector de fechas en la misma fila
     # ══════════════════════════════════════════
-    _section_header(
-        "Análisis de la Evolución de la Cartera",
-        f"Del {fecha_inicio.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')} — valores en {lbl_moneda}"
-    )
+    col_s2, col_i, col_f = st.columns([4, 1, 1])
+    with col_s2:
+        _section_header("Análisis de la Evolución de la Cartera")
+    with col_i:
+        st.markdown('<div style="height:2.1rem;"></div>', unsafe_allow_html=True)
+        fecha_inicio = st.date_input(
+            "Inicio",
+            value=datetime.now().date() - timedelta(days=365),
+            help="Fecha de inicio del período"
+        )
+    with col_f:
+        st.markdown('<div style="height:2.1rem;"></div>', unsafe_allow_html=True)
+        fecha_fin = st.date_input(
+            "Fin",
+            value=datetime.now().date(),
+            help="Fecha de fin del período"
+        )
+
+    # Me1: validar rango
+    if fecha_inicio > fecha_fin:
+        st.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
+        return
 
     evolution_df = calculate_portfolio_evolution(
         operaciones, precios, fecha_inicio, fecha_fin, moneda=moneda, fx_rates=fx_rates,
@@ -1118,8 +1104,6 @@ def main():
     if evolution_df.empty:
         st.warning("No hay datos de evolución para el rango de fechas seleccionado.")
     else:
-        # ── Fila de resumen ────────────────────────────────────────────────────
-        # Me4: distinguir activos abiertos de posiciones cerradas en el período
         n_abiertos = int((evolution_df['Nominales'] > 0).sum())
         n_cerrados = int((evolution_df['Nominales'] <= 0).sum())
         label_act  = str(n_abiertos) if n_cerrados == 0 else (
@@ -1131,16 +1115,15 @@ def main():
         pct_evo    = (total_gain / base * 100) if base > 0 else 0
         pct_str2   = f"({'▼' if pct_evo < 0 else '▲'} {abs(pct_evo):.1f}%)"
         summary_evo = pd.DataFrame([{
-            'Activos':          label_act,
-            'Valor Total':      _fmt_money(evolution_df['Valor Actual'].sum(), moneda),
-            'Valor al Inicio':  _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda),
-            'Compras':          _fmt_money(evolution_df['Compras'].sum(), moneda),
-            'Ventas + Flujos':  _fmt_money(flujos, moneda),
-            'Ganancia Total':   f"{_fmt_money(total_gain, moneda)} {pct_str2}",
+            'Activos':         label_act,
+            'Valor Total':     _fmt_money(evolution_df['Valor Actual'].sum(), moneda),
+            'Valor al Inicio': _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda),
+            'Compras':         _fmt_money(evolution_df['Compras'].sum(), moneda),
+            'Ventas + Flujos': _fmt_money(flujos, moneda),
+            'Ganancia Total':  f"{_fmt_money(total_gain, moneda)} {pct_str2}",
         }])
         st.dataframe(summary_evo, use_container_width=True, hide_index=True)
 
-        # Tabla
         evo_display = evolution_df.copy()
         evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
         for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
@@ -1149,15 +1132,8 @@ def main():
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
             else:
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
-
-        st.dataframe(
-            evo_display,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Activo": st.column_config.TextColumn("Activo", width="medium"),
-            }
-        )
+        st.dataframe(evo_display, use_container_width=True, hide_index=True,
+                     column_config={"Activo": st.column_config.TextColumn("Activo", width="medium")})
 
         csv_evo = evolution_df.to_csv(index=False)
         st.download_button(
@@ -1167,25 +1143,45 @@ def main():
             mime="text/csv",
         )
 
-    # ── Detalle por activo ───────────────────
+    # ── Detalle por activo ─────────────────────────────────────────────────────
     if not evolution_df.empty:
         st.markdown("---")
         _section_header("Análisis Detallado de Evolución por Activo")
-
         activos_disponibles = ["Seleccionar"] + evolution_df['Activo'].tolist()
         activo_sel = st.selectbox(
             "Seleccionar activo para análisis detallado:",
             activos_disponibles,
             index=0,
-            help="Selecciona un activo para ver todas las operaciones consideradas en el período"
         )
-
         if activo_sel and activo_sel != "Seleccionar":
             mostrar_analisis_detallado_activo(
                 operaciones, precios, activo_sel, fecha_inicio, fecha_fin,
                 moneda=moneda, fx_rates=fx_rates,
                 live_prices=live_prices, live_fx=live_fx
             )
+
+    # ══════════════════════════════════════════
+    # UPLOADER — al pie de la página
+    # ══════════════════════════════════════════
+    st.markdown("---")
+    with st.expander("📁 Cargar archivo Excel diferente"):
+        uploaded_file = st.file_uploader(
+            "Arrastrá un .xlsx o hacé click para seleccionar",
+            type=['xlsx', 'xls'],
+            label_visibility='collapsed'
+        )
+        if uploaded_file is not None:
+            new_bytes = uploaded_file.getbuffer().tobytes()
+            if new_bytes != st.session_state.get('upload_bytes', b''):
+                st.session_state.upload_bytes = new_bytes
+                if 'upload_id' not in st.session_state:
+                    st.session_state.upload_id = uuid.uuid4().hex[:12]
+                st.rerun()
+        if st.session_state.get('upload_bytes'):
+            st.success(f"✅ Usando archivo cargado.")
+            if st.button("↩ Volver al archivo original"):
+                st.session_state.upload_bytes = None
+                st.rerun()
 
 
 if __name__ == "__main__":
