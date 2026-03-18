@@ -698,6 +698,10 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
 
         # Filtrar activos con nominales finales negativos (error de datos, igual que Sección 1)
         if nom_fin < 0:
+            st.warning(
+                f"⚠️ {asset}: nominales finales negativos ({nom_fin:.0f}) — "
+                f"posible venta sin compra registrada. Se excluye del análisis."
+            )
             continue
 
         valor_inicio       = nom_inicio * precio_inicio if nom_inicio > 0 else 0
