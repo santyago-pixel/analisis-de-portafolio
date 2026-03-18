@@ -622,15 +622,21 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
     for asset in assets:
         asset_ops = operaciones[operaciones['Activo'] == asset].sort_values('Fecha')
 
-        # C1/C2/C6: Último reset hasta fecha_fin — mismo criterio que Sección 1.
-        # Filtra por posición iloc para incluir ops del mismo día post-reset (C2).
-        ops_until_fin   = asset_ops[asset_ops['Fecha'] <= pd.to_datetime(fecha_fin)]
-        last_reset_date, last_reset_pos = _find_last_reset(ops_until_fin)
+        # C1/C2/C6: Detectar último reset usando solo ops ANTES de fecha_inicio.
+        # Si se usara ops hasta fecha_fin, activos que cierran posición dentro del
+        # rango (ej. compra+venta mismo día, o posición que llega a 0 en el período)
+        # quedarían marcados como reset y su actividad sería excluida incorrectamente.
+        ops_until_fin = asset_ops[asset_ops['Fecha'] <= pd.to_datetime(fecha_fin)]
+        ops_for_reset = asset_ops[asset_ops['Fecha'] <  pd.to_datetime(fecha_inicio)]
+        last_reset_date, last_reset_pos_pre = _find_last_reset(ops_for_reset)
 
         if last_reset_date is None:
             ops_since_reset = ops_until_fin
         else:
-            ops_since_reset = ops_until_fin.iloc[last_reset_pos + 1:]
+            # Mapear posición del reset (en ops_for_reset) a ops_until_fin vía index label
+            reset_label = ops_for_reset.index[last_reset_pos_pre]
+            pos_in_fin  = ops_until_fin.index.get_loc(reset_label)
+            ops_since_reset = ops_until_fin.iloc[pos_in_fin + 1:]
 
         # C4: Detectar ventas sin compra previa — igual que Sección 1.
         # Si el total de ventas supera el total de compras registradas,
