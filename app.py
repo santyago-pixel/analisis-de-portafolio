@@ -433,7 +433,7 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
 
     ap = precios[precios['Activo'] == activo]
 
-    avail = ap[ap['Fecha'] < pd.to_datetime(fecha_inicio)]
+    avail = ap[ap['Fecha'] <= pd.to_datetime(fecha_inicio)]
     precio_inicio = avail.iloc[-1]['Precio'] if not avail.empty else 0
     detalle_data.append({
         'Fecha':     fecha_inicio,
