@@ -1231,7 +1231,8 @@ def main():
                 (ops_cash['Fecha'] <= pd.to_datetime(fecha_fin))
             ]
             flujos_netos = sum(
-                ((row[col_dep] or 0) - (row[col_ret] or 0)) *
+                ((row[col_dep] if pd.notna(row.get(col_dep, np.nan)) else 0.0) -
+                 (row[col_ret] if pd.notna(row.get(col_ret, np.nan)) else 0.0)) *
                 (_get_fx(fx_rates, row['Fecha']) if moneda == 'ARS' else 1.0)
                 for _, row in ops_periodo.iterrows()
                 if pd.notna(row.get(col_dep, np.nan)) or pd.notna(row.get(col_ret, np.nan))
