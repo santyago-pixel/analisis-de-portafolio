@@ -1078,14 +1078,15 @@ def main():
         total_ganancia_no_r = portfolio_df['Ganancias no Realizadas'].sum()
         pct_no_r            = (total_ganancia_no_r / total_costo * 100) if total_costo > 0 else 0
 
-        total_ganancia  = total_ganancia_r + total_ganancia_no_r
-        pct_total       = (total_ganancia / total_costo * 100) if total_costo > 0 else 0
-        pct_str         = f"({'▼' if pct_total < 0 else '▲'} {abs(pct_total):.1f}%)"
-        total_flujos    = total_amort + total_cup + total_div
+        pct_str = f"({'▼' if pct_no_r < 0 else '▲'} {abs(pct_no_r):.1f}%)"
         summary_row = pd.DataFrame([{
+            'Valor de Mercado': _fmt_money(total_valor_mercado, moneda),
             'Costo Total':      _fmt_money(total_costo, moneda),
-            'Amort/Cupones/Div':_fmt_money(total_flujos, moneda),
-            'Ganancia Total':   f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
+            'G. Realizadas':    _fmt_money(total_ganancia_r, moneda),
+            'G. no Realizadas': f"{_fmt_money(total_ganancia_no_r, moneda)} {pct_str}",
+            'Amortizaciones':   _fmt_money(total_amort, moneda),
+            'Cupones':          _fmt_money(total_cup, moneda),
+            'Dividendos':       _fmt_money(total_div, moneda),
         }])
         st.dataframe(summary_row, use_container_width=True, hide_index=True)
 
@@ -1094,12 +1095,14 @@ def main():
             'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
         ]
         display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].copy()
-        display_df['Amort/Cupones/Div'] = display_df['Amortizaciones'] + display_df['Cupones'] + display_df['Dividendos']
-        display_df = display_df.rename(columns={'Costo': 'Costo Total'})
-        display_df = display_df[['Activo', 'Costo Total', 'Amort/Cupones/Div', 'Ganancia Total']]
-        display_df['Costo Total']       = display_df['Costo Total'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Amort/Cupones/Div'] = display_df['Amort/Cupones/Div'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Ganancia Total']    = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Nominales']      = display_df['Nominales'].apply(_fmt_number)
+        display_df['Precio Actual']  = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
+        display_df['Valor Actual']   = display_df['Valor Actual'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Costo']          = display_df['Costo'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Amortizaciones'] = display_df['Amortizaciones'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Cupones']        = display_df['Cupones'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Dividendos']     = display_df['Dividendos'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Ganancia Total'] = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
         st.dataframe(display_df, use_container_width=True, hide_index=True,
                      column_config={"Activo": st.column_config.TextColumn("Activo", width="medium")})
 
@@ -1111,7 +1114,7 @@ def main():
             "cobrados desde la apertura de la posición actual. Los flujos de posiciones "
             "anteriores del mismo activo (antes del último reset) se reflejan en la Sección 2."
         )
-        csv = display_df.to_csv(index=False)
+        csv = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].to_csv(index=False)
         st.download_button(
             label="📥 Descargar CSV",
             data=csv,
