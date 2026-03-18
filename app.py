@@ -789,14 +789,18 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo,
 
     asset_ops = operaciones[operaciones['Activo'] == activo].sort_values('Fecha')
 
-    # C1/C2: Último reset hasta fecha_fin — mismo criterio que Sección 1 y Sección 2.
+    # C1/C2: Reset detectado solo con ops ANTES de fecha_inicio (igual que Sección 2).
+    # Así, activos que cierran posición dentro del período (AL29, AL30) no quedan excluidos.
     ops_until_fin_d = asset_ops[asset_ops['Fecha'] <= pd.to_datetime(fecha_fin)]
-    last_reset_date, last_reset_pos = _find_last_reset(ops_until_fin_d)
+    ops_for_reset_d = asset_ops[asset_ops['Fecha'] <  pd.to_datetime(fecha_inicio)]
+    last_reset_date, last_reset_pos_pre = _find_last_reset(ops_for_reset_d)
 
     if last_reset_date is None:
         ops_since_reset = ops_until_fin_d
     else:
-        ops_since_reset = ops_until_fin_d.iloc[last_reset_pos + 1:]
+        reset_label = ops_for_reset_d.index[last_reset_pos_pre]
+        pos_in_fin  = ops_until_fin_d.index.get_loc(reset_label)
+        ops_since_reset = ops_until_fin_d.iloc[pos_in_fin + 1:]
 
     # Nominales al inicio (ops ESTRICTAMENTE antes de fecha_inicio → sin doble conteo)
     nom_inicio = 0
