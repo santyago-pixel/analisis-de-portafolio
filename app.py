@@ -1080,7 +1080,6 @@ def main():
 
         pct_str = f"({'▼' if pct_no_r < 0 else '▲'} {abs(pct_no_r):.1f}%)"
         summary_row = pd.DataFrame([{
-            'Activos':          len(portfolio_df),
             'Valor de Mercado': _fmt_money(total_valor_mercado, moneda),
             'Costo Total':      _fmt_money(total_costo, moneda),
             'G. Realizadas':    _fmt_money(total_ganancia_r, moneda),
@@ -1156,18 +1155,12 @@ def main():
     if evolution_df.empty:
         st.warning("No hay datos de evolución para el rango de fechas seleccionado.")
     else:
-        n_abiertos = int((evolution_df['Nominales'] > 0).sum())
-        n_cerrados = int((evolution_df['Nominales'] <= 0).sum())
-        label_act  = str(n_abiertos) if n_cerrados == 0 else (
-            f"{n_abiertos} ({n_cerrados} cerrado{'s' if n_cerrados > 1 else ''})"
-        )
         flujos     = evolution_df['Ventas'].sum() + evolution_df['Amort / Cup / Div'].sum()
         total_gain = evolution_df['Ganancia Total'].sum()
         base       = evolution_df['Valor al Inicio'].sum() + evolution_df['Compras'].sum()
         pct_evo    = (total_gain / base * 100) if base > 0 else 0
         pct_str2   = f"({'▼' if pct_evo < 0 else '▲'} {abs(pct_evo):.1f}%)"
         summary_evo = pd.DataFrame([{
-            'Activos':         label_act,
             'Valor Total':     _fmt_money(evolution_df['Valor Actual'].sum(), moneda),
             'Valor al Inicio': _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda),
             'Compras':         _fmt_money(evolution_df['Compras'].sum(), moneda),
