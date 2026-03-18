@@ -57,11 +57,15 @@ st.markdown("""
 def load_data(filename='operaciones.xlsx'):
     """Cargar datos desde operaciones.xlsx o archivo especificado.
 
-    Retorna (operaciones_mapped, precios_long, fx_rates) donde:
+    Retorna (operaciones_mapped, precios_long, fx_rates, live_prices, live_fx) donde:
       - operaciones_mapped: DataFrame con columnas Fecha, Tipo, Activo,
         Cantidad, Precio, Monto (USD), Precio ARS, Monto ARS.
-      - precios_long: precios de bonos en USD en formato largo (sin columna ARS).
-      - fx_rates: DataFrame con columnas Fecha y ARS (tipo de cambio USD/ARS).
+      - precios_long: precios históricos de bonos en USD en formato largo (sin fila
+        "Precio Actual" y sin columna ARS).
+      - fx_rates: DataFrame con columnas Fecha y ARS (tipo de cambio histórico USD/ARS).
+      - live_prices: dict {activo: precio_usd} con precios en vivo de la primera fila.
+      - live_fx: float con el tipo de cambio en vivo (ARS/USD) de la primera fila,
+        o None si no está disponible.
     """
     try:
         # ── Hoja Operaciones ─────────────────────────────────────────────
@@ -115,6 +119,27 @@ def load_data(filename='operaciones.xlsx'):
         precios = pd.read_excel(filename, sheet_name='Precios')
         fecha_col = precios.columns[0]
         precios = precios.rename(columns={fecha_col: 'Fecha'})
+
+        # ── Extraer fila "Precio Actual" (primera fila = precios en vivo) ──
+        # La primera fila tiene Fecha="Precio Actual" en lugar de una fecha real.
+        # Se separa antes de convertir Fecha a datetime para evitar errores de parseo.
+        live_prices = {}
+        live_fx     = None
+        mask_live   = precios['Fecha'].astype(str).str.strip().str.lower() == 'precio actual'
+        if mask_live.any():
+            live_row = precios[mask_live].iloc[0]
+            for col in precios.columns:
+                if col == 'Fecha':
+                    continue
+                val = live_row[col]
+                if col == 'ARS':
+                    if pd.notna(val):
+                        live_fx = float(val)
+                elif pd.notna(val):
+                    live_prices[str(col).strip()] = float(val)
+            # Remover fila de precios en vivo del DataFrame histórico
+            precios = precios[~mask_live].copy()
+
         precios['Fecha'] = pd.to_datetime(precios['Fecha'])
 
         # Extraer tipo de cambio ARS ANTES del melt para que no aparezca como bono
@@ -136,14 +161,14 @@ def load_data(filename='operaciones.xlsx'):
             value_name='Precio'
         ).dropna()
 
-        return operaciones_mapped, precios_long, fx_rates
+        return operaciones_mapped, precios_long, fx_rates, live_prices, live_fx
 
     except FileNotFoundError:
         st.error(f"No se encontró el archivo '{filename}' en la carpeta del proyecto.")
-        return None, None, None
+        return None, None, None, {}, None
     except Exception as e:
         st.error(f"Error al cargar el archivo: {str(e)}")
-        return None, None, None
+        return None, None, None, {}, None
 
 
 # ─────────────────────────────────────────────
@@ -190,10 +215,10 @@ def _get_precio_op(op, moneda, fx_rates):
 
 
 def _get_price_at_date(asset_prices, fecha, moneda, fx_rates):
-    """Precio de mercado de un activo a una fecha dada, en la moneda seleccionada.
+    """Precio histórico de mercado de un activo a una fecha dada.
 
-    Los precios en USD se obtienen de la hoja Precios (precio por nominal).
-    En ARS: precio_USD × TC de cierre del día (cotización end-of-day).
+    Busca el último precio disponible ≤ fecha en el histórico.
+    En ARS: precio_USD × TC de cierre del día.
     """
     avail = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha)]
     if avail.empty:
@@ -201,6 +226,34 @@ def _get_price_at_date(asset_prices, fecha, moneda, fx_rates):
     price_usd = float(avail.iloc[-1]['Precio'])
     if moneda == 'ARS' and fx_rates is not None:
         fx = _get_fx(fx_rates, fecha)
+        return price_usd * fx
+    return price_usd
+
+
+def _get_current_price(asset, asset_prices, moneda, fx_rates,
+                       live_prices=None, live_fx=None):
+    """Precio actual de un activo: usa el precio en vivo si está disponible.
+
+    Para la valuación de posiciones corrientes (Sección 1 y Valor Actual de
+    Sección 2) se usa la primera fila del Excel ('Precio Actual'), que refleja
+    la cotización en tiempo real. Si el activo no está en live_prices, cae back
+    al último precio histórico disponible.
+
+    En ARS: precio_USD × TC en vivo (live_fx) si está disponible,
+            o TC histórico más reciente como alternativa.
+    """
+    if live_prices and asset in live_prices:
+        price_usd = live_prices[asset]
+        if moneda == 'ARS':
+            fx = live_fx if live_fx is not None else _get_fx(fx_rates, pd.Timestamp.now())
+            return price_usd * fx
+        return price_usd
+    # Fallback: último precio histórico disponible
+    if asset_prices.empty:
+        return 0.0
+    price_usd = float(asset_prices.iloc[-1]['Precio'])
+    if moneda == 'ARS':
+        fx = live_fx if live_fx is not None else _get_fx(fx_rates, asset_prices.iloc[-1]['Fecha'])
         return price_usd * fx
     return price_usd
 
@@ -251,7 +304,8 @@ def _find_last_reset(asset_ops_sorted):
 # Composición actual
 # ─────────────────────────────────────────────
 def calculate_current_portfolio(operaciones, precios, fecha_actual,
-                                moneda='USD', fx_rates=None):
+                                moneda='USD', fx_rates=None,
+                                live_prices=None, live_fx=None):
     """
     Calcula la composición actual de la cartera con lógica de reseteo.
 
@@ -375,7 +429,8 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
             continue
 
         costo_posicion = current_nominals * costo_unit_promedio
-        current_price  = _get_price_at_date(asset_prices, fecha_actual, moneda, fx_rates)
+        current_price  = _get_current_price(asset, asset_prices, moneda, fx_rates,
+                                            live_prices, live_fx)
         valor_actual   = current_nominals * current_price
         ganancia_no_r  = valor_actual - costo_posicion
         ganancia_total = ganancia_no_r + total_amort + total_cupones + total_dividendos
@@ -401,7 +456,8 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
 # Evolución histórica
 # ─────────────────────────────────────────────
 def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
-                                  moneda='USD', fx_rates=None):
+                                  moneda='USD', fx_rates=None,
+                                  live_prices=None, live_fx=None):
     """Calcular evolución de la cartera en un rango de fechas."""
     operaciones = operaciones.copy()
     precios = precios.copy()
@@ -485,7 +541,8 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
             )
 
         precio_inicio = _get_price_at_date(asset_prices, fecha_inicio, moneda, fx_rates)
-        precio_fin    = _get_price_at_date(asset_prices, fecha_fin,    moneda, fx_rates)
+        precio_fin    = _get_current_price(asset, asset_prices, moneda, fx_rates,
+                                           live_prices, live_fx)
 
         # Filtrar activos con nominales finales negativos (error de datos, igual que Sección 1)
         if nom_fin < 0:
@@ -500,7 +557,7 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         evolution_data.append({
             'Activo':            asset,
             'Nominales':         nom_fin,
-            'Precio Cierre':     precio_fin,   # Me5: es precio al fecha_fin, no "actual"
+            'Precio Actual':     precio_fin,
             'Valor Actual':      valor_fin,
             'Valor al Inicio':   valor_inicio,
             'Compras':           compras_en_periodo,
@@ -517,7 +574,8 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
 # ─────────────────────────────────────────────
 def mostrar_analisis_detallado_activo(operaciones, precios, activo,
                                       fecha_inicio, fecha_fin,
-                                      moneda='USD', fx_rates=None):
+                                      moneda='USD', fx_rates=None,
+                                      live_prices=None, live_fx=None):
     """Mostrar análisis detallado de un activo específico."""
     operaciones = operaciones.copy()
     precios = precios.copy()
@@ -582,7 +640,7 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo,
 
     # Me7: fila de cierre siempre presente (muestra $0 si la posición fue cerrada)
     if nom_fin > 0:
-        precio_fin = _get_price_at_date(ap, fecha_fin, moneda, fx_rates)
+        precio_fin = _get_current_price(activo, ap, moneda, fx_rates, live_prices, live_fx)
         detalle_data.append({
             'Fecha':     fecha_fin,
             'Operación': 'Valor Final',
@@ -656,16 +714,10 @@ def _fmt_money(x, moneda='USD'):
 
 
 def _fmt_price(x, moneda='USD'):
-    """Formatea un precio según la moneda.
-
-    USD: cuatro decimales para mayor precisión.
-    ARS: dos decimales.
-    """
+    """Formatea un precio según la moneda (ambos con 2 decimales)."""
     if not pd.notna(x):
         return ""
-    if moneda == 'ARS':
-        return f"${x:,.2f}"
-    return f"${x:,.4f}"
+    return f"${x:,.2f}"
 
 
 def _fmt_number(x):
@@ -759,7 +811,7 @@ def main():
         return
 
     # ── Carga de datos ────────────────────────
-    operaciones, precios, fx_rates = load_data(filename)
+    operaciones, precios, fx_rates, live_prices, live_fx = load_data(filename)
 
     if operaciones is None or precios is None:
         st.error(
@@ -783,7 +835,8 @@ def main():
     # SECCIÓN 1 – COMPOSICIÓN ACTUAL
     # ══════════════════════════════════════════
     portfolio_df = calculate_current_portfolio(
-        operaciones, precios, fecha_actual, moneda=moneda, fx_rates=fx_rates
+        operaciones, precios, fecha_actual, moneda=moneda, fx_rates=fx_rates,
+        live_prices=live_prices, live_fx=live_fx
     )
 
     st.header("Composición Actual de la Cartera")
@@ -883,7 +936,8 @@ def main():
     )
 
     evolution_df = calculate_portfolio_evolution(
-        operaciones, precios, fecha_inicio, fecha_fin, moneda=moneda, fx_rates=fx_rates
+        operaciones, precios, fecha_inicio, fecha_fin, moneda=moneda, fx_rates=fx_rates,
+        live_prices=live_prices, live_fx=live_fx
     )
 
     if evolution_df.empty:
@@ -917,9 +971,9 @@ def main():
         # Tabla
         evo_display = evolution_df.copy()
         evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
-        for col in ['Precio Cierre', 'Valor Actual', 'Valor al Inicio',
+        for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
                     'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
-            if col == 'Precio Cierre':
+            if col == 'Precio Actual':
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
             else:
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
@@ -957,7 +1011,8 @@ def main():
         if activo_sel and activo_sel != "Seleccionar":
             mostrar_analisis_detallado_activo(
                 operaciones, precios, activo_sel, fecha_inicio, fecha_fin,
-                moneda=moneda, fx_rates=fx_rates
+                moneda=moneda, fx_rates=fx_rates,
+                live_prices=live_prices, live_fx=live_fx
             )
 
 
