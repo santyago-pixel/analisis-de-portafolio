@@ -1078,15 +1078,14 @@ def main():
         total_ganancia_no_r = portfolio_df['Ganancias no Realizadas'].sum()
         pct_no_r            = (total_ganancia_no_r / total_costo * 100) if total_costo > 0 else 0
 
-        pct_str = f"({'▼' if pct_no_r < 0 else '▲'} {abs(pct_no_r):.1f}%)"
+        total_ganancia  = total_ganancia_r + total_ganancia_no_r
+        pct_total       = (total_ganancia / total_costo * 100) if total_costo > 0 else 0
+        pct_str         = f"({'▼' if pct_total < 0 else '▲'} {abs(pct_total):.1f}%)"
+        total_flujos    = total_amort + total_cup + total_div
         summary_row = pd.DataFrame([{
-            'Valor de Mercado': _fmt_money(total_valor_mercado, moneda),
             'Costo Total':      _fmt_money(total_costo, moneda),
-            'G. Realizadas':    _fmt_money(total_ganancia_r, moneda),
-            'G. no Realizadas': f"{_fmt_money(total_ganancia_no_r, moneda)} {pct_str}",
-            'Amortizaciones':   _fmt_money(total_amort, moneda),
-            'Cupones':          _fmt_money(total_cup, moneda),
-            'Dividendos':       _fmt_money(total_div, moneda),
+            'Amort/Cupones/Div':_fmt_money(total_flujos, moneda),
+            'Ganancia Total':   f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
         }])
         st.dataframe(summary_row, use_container_width=True, hide_index=True)
 
