@@ -44,6 +44,7 @@ desktop.ini
 # Datos sensibles / privados (no subir carteras reales)
 data/privado/
 *.xlsx
+!operaciones.xlsx
 !data/ejemplo_cartera.xlsx
 
 # IDEs
