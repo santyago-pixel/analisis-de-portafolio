@@ -44,27 +44,34 @@ html, body, [class*="css"], .stApp, button, input, select, textarea {
 /* ══════════════════════════════════════════════
    FONDO Y CONTENEDOR PRINCIPAL
 ══════════════════════════════════════════════ */
+/* Fondo: blanco en los márgenes laterales, gris en la franja central de 1200px */
 .stApp {
-    background-color: #FFFFFF !important;
+    background: linear-gradient(
+        to right,
+        #FFFFFF 0%,
+        #FFFFFF calc(50% - 600px),
+        #F0F2F6 calc(50% - 600px),
+        #F0F2F6 calc(50% + 600px),
+        #FFFFFF calc(50% + 600px),
+        #FFFFFF 100%
+    ) !important;
+    min-height: 100vh !important;
 }
 /* Ocultar sidebar completamente */
 [data-testid="stSidebar"]        { display: none !important; }
 [data-testid="collapsedControl"] { display: none !important; }
-/* Centrar contenido principal con márgenes blancos a los costados */
+/* Centrar contenido principal */
 .main .block-container,
 [data-testid="block-container"],
 div.block-container {
-    background-color: #F0F2F6 !important;
+    max-width: 1200px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
     padding-top: 1.5rem !important;
     padding-left: 3rem !important;
     padding-right: 3rem !important;
-    max-width: 1050px !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
-    min-height: 100vh !important;
-    box-shadow: 4px 0 16px rgba(0,0,0,0.04), -4px 0 16px rgba(0,0,0,0.04) !important;
+    background-color: transparent !important;
 }
-/* La sección main debe ser transparente para que el blanco del stApp se vea a los costados */
 section[data-testid="stMain"],
 .main {
     background-color: transparent !important;
