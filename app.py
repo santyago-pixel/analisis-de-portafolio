@@ -1205,36 +1205,49 @@ def main():
         col_ret  = next((c for c in cols_ops if 'retiro'  in c.strip().lower()), None)
         has_cash = bool(col_dep and col_ret)
 
-        def _actual_cash(df, fecha, strict=False):
-            """Efectivo real acumulado hasta (o antes de) fecha."""
-            ops_f = df[df['Fecha'] < pd.to_datetime(fecha)] if strict \
-                    else df[df['Fecha'] <= pd.to_datetime(fecha)]
+        def _actual_cash(df, fecha, strict_bond=False, strict_ext=False):
+            """Efectivo real acumulado.
+            strict_bond: usa < fecha para flujos de bonos (compras/ventas/amort/cup).
+            strict_ext:  usa < fecha para flujos externos (depósitos/retiros).
+            Para cash_inicio: strict_bond=True, strict_ext=False
+              → depósitos/retiros del día de inicio cuentan como capital inicial,
+                pero los bonos comprados ese día no (consistente con bond table).
+            """
             total = 0.0
-            for _, row in ops_f.iterrows():
-                fx    = _get_fx(fx_rates, row['Fecha']) if moneda == 'ARS' else 1.0
-                dep   = row[col_dep] if col_dep and pd.notna(row.get(col_dep, np.nan)) else 0.0
-                ret   = row[col_ret] if col_ret and pd.notna(row.get(col_ret, np.nan)) else 0.0
-                total += (dep - ret) * fx
+            for _, row in df.iterrows():
+                fecha_row = row['Fecha']
+                if pd.isna(fecha_row):
+                    continue
+                fx  = _get_fx(fx_rates, fecha_row) if moneda == 'ARS' else 1.0
+                dep = row[col_dep] if col_dep and pd.notna(row.get(col_dep, np.nan)) else 0.0
+                ret = row[col_ret] if col_ret and pd.notna(row.get(col_ret, np.nan)) else 0.0
+                cut_ext  = fecha_row <  pd.to_datetime(fecha) if strict_ext  else fecha_row <= pd.to_datetime(fecha)
+                if cut_ext:
+                    total += (dep - ret) * fx
                 tipo = row.get('Tipo', np.nan)
                 if pd.notna(tipo):
-                    monto = _get_monto(row, moneda, fx_rates)
-                    total += -monto if str(tipo).strip() == 'Compra' else monto
+                    cut_bond = fecha_row < pd.to_datetime(fecha) if strict_bond else fecha_row <= pd.to_datetime(fecha)
+                    if cut_bond:
+                        monto = _get_monto(row, moneda, fx_rates)
+                        total += -monto if str(tipo).strip() == 'Compra' else monto
             return total
 
         if has_cash:
-            # strict=True para inicio: mismo corte que usa el cálculo de bonos (< fecha_inicio)
-            cash_inicio = _actual_cash(ops_cash, fecha_inicio, strict=True)
-            cash_fin    = _actual_cash(ops_cash, fecha_fin,    strict=False)
-            # Flujos externos en el período (solo depósitos y retiros, sin bonos)
-            ops_periodo = ops_cash[
-                (ops_cash['Fecha'] >= pd.to_datetime(fecha_inicio)) &
+            # cash_inicio: depósitos/retiros ≤ fecha_inicio (mismo día = capital inicial),
+            #              bonos < fecha_inicio (consistente con bond table).
+            cash_inicio = _actual_cash(ops_cash, fecha_inicio, strict_bond=True,  strict_ext=False)
+            cash_fin    = _actual_cash(ops_cash, fecha_fin,    strict_bond=False, strict_ext=False)
+            # Flujos externos ESTRICTAMENTE después de fecha_inicio (evita doble-contar
+            # depósitos del día de inicio que ya están en cash_inicio).
+            ops_flujos = ops_cash[
+                (ops_cash['Fecha'] >  pd.to_datetime(fecha_inicio)) &
                 (ops_cash['Fecha'] <= pd.to_datetime(fecha_fin))
             ]
             flujos_netos = sum(
                 ((row[col_dep] if pd.notna(row.get(col_dep, np.nan)) else 0.0) -
                  (row[col_ret] if pd.notna(row.get(col_ret, np.nan)) else 0.0)) *
                 (_get_fx(fx_rates, row['Fecha']) if moneda == 'ARS' else 1.0)
-                for _, row in ops_periodo.iterrows()
+                for _, row in ops_flujos.iterrows()
                 if pd.notna(row.get(col_dep, np.nan)) or pd.notna(row.get(col_ret, np.nan))
             )
         else:
