@@ -632,6 +632,41 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         else:
             ops_since_reset = ops_until_fin.iloc[last_reset_pos + 1:]
 
+        # C4: Detectar ventas sin compra previa — igual que Sección 1.
+        # Si el total de ventas supera el total de compras registradas,
+        # la compra original es anterior a la base de datos.
+        # Se inyecta una compra sintética al precio más antiguo disponible.
+        asset_prices = precios[precios['Activo'] == asset].sort_values('Fecha')
+        buys_q  = ops_since_reset[ops_since_reset['Tipo'].str.strip() == 'Compra']['Cantidad'].sum()
+        sells_q = ops_since_reset[ops_since_reset['Tipo'].str.strip() == 'Venta']['Cantidad'].sum()
+        buys_q  = buys_q  if not pd.isna(buys_q)  else 0
+        sells_q = sells_q if not pd.isna(sells_q) else 0
+        deficit = sells_q - buys_q
+        if deficit > 0 and not asset_prices.empty:
+            oldest_row        = asset_prices.iloc[0]
+            oldest_price      = float(oldest_row['Precio'])
+            oldest_date       = oldest_row['Fecha']
+            oldest_monto      = deficit * oldest_price
+            oldest_precio_ars = oldest_price * _get_fx(fx_rates, oldest_date) if moneda == 'ARS' else np.nan
+            oldest_monto_ars  = oldest_monto  * _get_fx(fx_rates, oldest_date) if moneda == 'ARS' else np.nan
+            synthetic = pd.DataFrame([{
+                'Fecha':      oldest_date,
+                'Tipo':       'Compra',
+                'Activo':     asset,
+                'Cantidad':   deficit,
+                'Precio':     oldest_price,
+                'Monto':      oldest_monto,
+                'Precio ARS': oldest_precio_ars,
+                'Monto ARS':  oldest_monto_ars,
+            }])
+            ops_since_reset = pd.concat([synthetic, ops_since_reset]).sort_values('Fecha').reset_index(drop=True)
+            st.caption(
+                f'⚠️ {asset}: compra de origen no registrada — se estimaron '
+                f'{deficit:.0f} nominales al precio más antiguo disponible '
+                f'(${oldest_price:.2f} al {oldest_date.strftime("%d/%m/%Y")}). '
+                f'Probable operación anterior al inicio de la base de datos.'
+            )
+
         # Acumulados hasta inicio (ops ESTRICTAMENTE antes de fecha_inicio)
         ops_until_inicio = ops_since_reset[
             ops_since_reset['Fecha'] < pd.to_datetime(fecha_inicio)
@@ -675,9 +710,6 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
             elif _clasificar_operacion(tipo):
                 divcup_fin += monto
 
-        # Precios inicio / fin (M4: sort garantiza iloc[-1] correcto)
-        asset_prices = precios[precios['Activo'] == asset].sort_values('Fecha')
-
         # M3: advertir si faltan precios
         avail_inicio = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_inicio)]
         avail_fin    = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_fin)]
@@ -696,11 +728,12 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         precio_fin    = _get_current_price(asset, asset_prices, moneda, fx_rates,
                                            live_prices, live_fx)
 
-        # Filtrar activos con nominales finales negativos (error de datos, igual que Sección 1)
+        # Red de seguridad: si después de la compra sintética los nominales
+        # siguen siendo negativos hay un error de datos en el Excel.
         if nom_fin < 0:
             st.warning(
-                f"⚠️ {asset}: nominales finales negativos ({nom_fin:.0f}) — "
-                f"posible venta sin compra registrada. Se excluye del análisis."
+                f"⚠️ {asset}: nominales negativos ({nom_fin:.0f}) incluso tras ajuste — "
+                f"verificar operaciones en el Excel. Se excluye."
             )
             continue
 
