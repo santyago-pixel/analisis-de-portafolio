@@ -66,7 +66,8 @@ def load_data(filename='operaciones.xlsx'):
         operaciones_mapped['Precio']   = operaciones['Precio']
         operaciones_mapped['Monto']    = operaciones['Valor']
 
-        operaciones_mapped['Tipo']   = operaciones_mapped['Tipo'].str.strip()
+        # Me2: normalizar capitalización para que 'compra', 'VENTA', etc. funcionen
+        operaciones_mapped['Tipo']   = operaciones_mapped['Tipo'].str.strip().str.title()
         operaciones_mapped['Activo'] = operaciones_mapped['Activo'].str.strip()
         operaciones_mapped = operaciones_mapped.dropna(
             subset=['Fecha', 'Tipo', 'Activo', 'Monto']
@@ -202,6 +203,11 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
         asset_prices = precios[precios['Activo'] == asset].sort_values('Fecha')
         available    = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_actual)]
         if available.empty:
+            # M3: avisar en lugar de descartar silenciosamente
+            st.warning(
+                f"⚠️ {asset}: sin precio disponible hasta el "
+                f"{fecha_actual.strftime('%d/%m/%Y')}. Se excluye de la cartera."
+            )
             continue
 
         # ── C4: Detectar ventas sin compra previa ────────────────────────
@@ -357,6 +363,17 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
         asset_prices  = precios[precios['Activo'] == asset].sort_values('Fecha')
         avail_inicio  = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_inicio)]
         avail_fin     = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_fin)]
+        # M3: advertir si faltan precios
+        if avail_inicio.empty and nom_inicio > 0:
+            st.warning(
+                f"⚠️ {asset}: sin precio al {fecha_inicio.strftime('%d/%m/%Y')}. "
+                f"Valor al Inicio = $0."
+            )
+        if avail_fin.empty and nom_fin > 0:
+            st.warning(
+                f"⚠️ {asset}: sin precio al {fecha_fin.strftime('%d/%m/%Y')}. "
+                f"Valor Final = $0."
+            )
         precio_inicio = avail_inicio.iloc[-1]['Precio'] if not avail_inicio.empty else 0
         precio_fin    = avail_fin.iloc[-1]['Precio']    if not avail_fin.empty    else 0
 
@@ -419,17 +436,19 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
 
     detalle_data = []
 
-    ap = precios[precios['Activo'] == activo]
+    ap = precios[precios['Activo'] == activo].sort_values('Fecha')
 
-    avail = ap[ap['Fecha'] <= pd.to_datetime(fecha_inicio)]
-    precio_inicio = avail.iloc[-1]['Precio'] if not avail.empty else 0
-    detalle_data.append({
-        'Fecha':     fecha_inicio,
-        'Operación': 'Valor Inicial',
-        'Nominales': nom_inicio if nom_inicio > 0 else None,
-        'Precio':    precio_inicio if nom_inicio > 0 else None,
-        'Valor':     nom_inicio * precio_inicio if nom_inicio > 0 else 0,
-    })
+    # M7: solo agregar fila "Valor Inicial" si había posición al inicio del período
+    if nom_inicio > 0:
+        avail = ap[ap['Fecha'] <= pd.to_datetime(fecha_inicio)]
+        precio_inicio = avail.iloc[-1]['Precio'] if not avail.empty else 0
+        detalle_data.append({
+            'Fecha':     fecha_inicio,
+            'Operación': 'Valor Inicial',
+            'Nominales': nom_inicio,
+            'Precio':    precio_inicio,
+            'Valor':     nom_inicio * precio_inicio,
+        })
 
     ops_en_periodo = ops_since_reset[
         (ops_since_reset['Fecha'] >= pd.to_datetime(fecha_inicio)) &
@@ -524,8 +543,10 @@ def _metric(label, value_str, sub_str=None):
         unsafe_allow_html=True
     )
     if sub_str:
+        # M2: rojo si el subtítulo es negativo, verde si es positivo
+        color = '#ff4444' if str(sub_str).strip().startswith('-') else '#00C851'
         st.markdown(
-            f'<div style="text-align:center;font-size:1.1em;color:#00C851;">{sub_str}</div>',
+            f'<div style="text-align:center;font-size:1.1em;color:{color};">{sub_str}</div>',
             unsafe_allow_html=True
         )
 
@@ -568,12 +589,21 @@ def main():
 
     # ── Archivo a usar ────────────────────────
     if uploaded_file is not None:
-        with open("temp_file.xlsx", "wb") as f:
+        # M5: nombre único por sesión para evitar colisiones entre usuarios
+        import uuid
+        if 'upload_id' not in st.session_state:
+            st.session_state.upload_id = uuid.uuid4().hex[:12]
+        filename = f"temp_{st.session_state.upload_id}.xlsx"
+        with open(filename, "wb") as f:
             f.write(uploaded_file.getbuffer())
-        filename = "temp_file.xlsx"
         st.success(f"📁 Archivo cargado: {uploaded_file.name}")
     else:
         filename = 'operaciones.xlsx'
+
+    # Me1: validar rango de fechas de evolución
+    if fecha_inicio > fecha_fin:
+        st.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
+        return
 
     # ── Carga de datos ────────────────────────
     operaciones, precios = load_data(filename)
