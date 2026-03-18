@@ -360,26 +360,25 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
         precio_inicio = avail_inicio.iloc[-1]['Precio'] if not avail_inicio.empty else 0
         precio_fin    = avail_fin.iloc[-1]['Precio']    if not avail_fin.empty    else 0
 
-        # Valor al inicio del período
-        valor_inicio = 0
-        if nom_inicio > 0:
-            valor_inicio += nom_inicio * precio_inicio
-        valor_inicio += compras_en_periodo
+        # Valor al inicio del período (solo lo que ya estaba en cartera)
+        valor_inicio = nom_inicio * precio_inicio if nom_inicio > 0 else 0
 
         valor_fin          = nom_fin * precio_fin
         div_cup_en_periodo = divcup_fin - divcup_inicio
         ventas_en_periodo  = sales_fin  - sales_inicio
-        ganancia_total     = (valor_fin - valor_inicio) + div_cup_en_periodo + ventas_en_periodo
+        # Ganancia = variación de valor + flujos cobrados − nuevo capital ingresado
+        ganancia_total     = (valor_fin - valor_inicio - compras_en_periodo) + div_cup_en_periodo + ventas_en_periodo
 
         evolution_data.append({
-            'Activo':         asset,
-            'Nominales':      nom_fin,
-            'Precio Actual':  precio_fin,
-            'Valor Actual':   valor_fin,
+            'Activo':          asset,
+            'Nominales':       nom_fin,
+            'Precio Actual':   precio_fin,
+            'Valor Actual':    valor_fin,
             'Valor al Inicio': valor_inicio,
-            'Ventas':         ventas_en_periodo,
-            'Div - Cupones':  div_cup_en_periodo,
-            'Ganancia Total': ganancia_total,
+            'Compras':         compras_en_periodo,
+            'Ventas':          ventas_en_periodo,
+            'Div - Cupones':   div_cup_en_periodo,
+            'Ganancia Total':  ganancia_total,
         })
 
     return pd.DataFrame(evolution_data)
@@ -668,7 +667,7 @@ def main():
         st.warning("No hay datos de evolución para el rango de fechas seleccionado.")
     else:
         # Métricas
-        col1, col2, col3, col4, col5 = st.columns(5)
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
         with col1:
             _metric("Total Activos",   str(len(evolution_df)))
         with col2:
@@ -676,12 +675,14 @@ def main():
         with col3:
             _metric("Valor al Inicio", f"${evolution_df['Valor al Inicio'].sum():,.0f}")
         with col4:
-            flujos = evolution_df['Ventas'].sum() + evolution_df['Div - Cupones'].sum()
-            _metric("Flujos Netos",    f"${flujos:,.0f}")
+            _metric("Compras en Período", f"${evolution_df['Compras'].sum():,.0f}")
         with col5:
+            flujos = evolution_df['Ventas'].sum() + evolution_df['Div - Cupones'].sum()
+            _metric("Ventas + Flujos", f"${flujos:,.0f}")
+        with col6:
             total_gain  = evolution_df['Ganancia Total'].sum()
-            val_inicio  = evolution_df['Valor al Inicio'].sum()
-            pct_evo     = (total_gain / val_inicio * 100) if val_inicio > 0 else 0
+            base        = evolution_df['Valor al Inicio'].sum() + evolution_df['Compras'].sum()
+            pct_evo     = (total_gain / base * 100) if base > 0 else 0
             _metric("Ganancia Total",  f"${total_gain:,.0f}", f"{pct_evo:.1f}%")
 
         # Tabla
@@ -689,7 +690,7 @@ def main():
         for col in ['Nominales']:
             evo_display[col] = evo_display[col].apply(_fmt_number)
         for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
-                    'Ventas', 'Div - Cupones', 'Ganancia Total']:
+                    'Compras', 'Ventas', 'Div - Cupones', 'Ganancia Total']:
             evo_display[col] = evo_display[col].apply(_fmt_money)
 
         st.dataframe(
