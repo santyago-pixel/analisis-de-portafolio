@@ -317,9 +317,9 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
                 (asset_ops['Fecha'] <= pd.to_datetime(fecha_fin))
             ]
 
-        # Acumulados hasta inicio  (en base a precios de mercado, no costo)
+        # Acumulados hasta inicio  (ops ESTRICTAMENTE antes de fecha_inicio)
         nom_inicio = sales_inicio = divcup_inicio = 0
-        ops_until_inicio = ops_since_reset[ops_since_reset['Fecha'] <= pd.to_datetime(fecha_inicio)]
+        ops_until_inicio = ops_since_reset[ops_since_reset['Fecha'] < pd.to_datetime(fecha_inicio)]
 
         for _, op in ops_until_inicio.iterrows():
             tipo = op['Tipo'].strip()
@@ -419,10 +419,10 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
             (asset_ops['Fecha'] <= pd.to_datetime(fecha_fin))
         ]
 
-    # Nominales al inicio
+    # Nominales al inicio (ops ESTRICTAMENTE antes de fecha_inicio → sin doble conteo)
     nom_inicio = 0
     for _, op in ops_since_reset.iterrows():
-        if op['Fecha'] > pd.to_datetime(fecha_inicio):
+        if op['Fecha'] >= pd.to_datetime(fecha_inicio):   # FIXED: >= evita doble conteo
             break
         if op['Tipo'].strip() == 'Compra':
             nom_inicio += op['Cantidad']
@@ -431,9 +431,10 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
 
     detalle_data = []
 
+    ap = precios[precios['Activo'] == activo]
+
     if nom_inicio > 0:
-        ap = precios[precios['Activo'] == activo]
-        avail = ap[ap['Fecha'] <= pd.to_datetime(fecha_inicio)]
+        avail = ap[ap['Fecha'] < pd.to_datetime(fecha_inicio)]
         precio_inicio = avail.iloc[-1]['Precio'] if not avail.empty else 0
         detalle_data.append({
             'Fecha':     fecha_inicio,
@@ -447,13 +448,32 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
         (ops_since_reset['Fecha'] >= pd.to_datetime(fecha_inicio)) &
         (ops_since_reset['Fecha'] <= pd.to_datetime(fecha_fin))
     ]
+
+    nom_fin = nom_inicio
     for _, op in ops_en_periodo.iterrows():
+        tipo = op['Tipo'].strip()
+        if tipo == 'Compra':
+            nom_fin += op['Cantidad']
+        elif tipo == 'Venta':
+            nom_fin -= op['Cantidad']
         detalle_data.append({
             'Fecha':     op['Fecha'],
             'Operación': op['Tipo'],
             'Nominales': op['Cantidad'],
             'Precio':    op['Precio'],
             'Valor':     op['Monto'],
+        })
+
+    # Fila de cierre: Valor Final
+    if nom_fin > 0:
+        avail_fin = ap[ap['Fecha'] <= pd.to_datetime(fecha_fin)]
+        precio_fin = avail_fin.iloc[-1]['Precio'] if not avail_fin.empty else 0
+        detalle_data.append({
+            'Fecha':     fecha_fin,
+            'Operación': 'Valor Final',
+            'Nominales': nom_fin,
+            'Precio':    precio_fin,
+            'Valor':     nom_fin * precio_fin,
         })
 
     detalle_df = pd.DataFrame(detalle_data)
