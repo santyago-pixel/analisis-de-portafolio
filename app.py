@@ -45,19 +45,21 @@ html, body, [class*="css"], .stApp, button, input, select, textarea {
    FONDO Y CONTENEDOR PRINCIPAL
 ══════════════════════════════════════════════ */
 .stApp {
-    background-color: #F0F2F6 !important;
+    background-color: #FFFFFF !important;
 }
 /* Ocultar sidebar completamente */
 [data-testid="stSidebar"]        { display: none !important; }
 [data-testid="collapsedControl"] { display: none !important; }
-/* Centrar contenido principal con márgenes blancos iguales */
+/* Centrar contenido principal con márgenes blancos a los costados */
 .main .block-container {
+    background-color: #F0F2F6 !important;
     padding-top: 1.5rem !important;
-    padding-left: 5rem !important;
-    padding-right: 5rem !important;
-    max-width: 1300px !important;
+    padding-left: 3rem !important;
+    padding-right: 3rem !important;
+    max-width: 1050px !important;
     margin-left: auto !important;
     margin-right: auto !important;
+    min-height: 100vh !important;
 }
 
 /* ══════════════════════════════════════════════
@@ -1075,16 +1077,14 @@ def main():
     # ══════════════════════════════════════════
     col_s2, col_i, col_f = st.columns([4, 1, 1])
     with col_s2:
-        _section_header("Análisis de la Evolución de la Cartera")
+        st.markdown('<div style="border-left:4px solid #1A4B9B;padding-left:10px;margin:0.3rem 0 0.5rem;"><div style="font-size:1.2rem;font-weight:700;color:#1B2333;">Análisis de la Evolución de la Cartera</div></div>', unsafe_allow_html=True)
     with col_i:
-        st.markdown('<div style="height:2.1rem;"></div>', unsafe_allow_html=True)
         fecha_inicio = st.date_input(
             "Inicio",
             value=datetime.now().date() - timedelta(days=365),
             help="Fecha de inicio del período"
         )
     with col_f:
-        st.markdown('<div style="height:2.1rem;"></div>', unsafe_allow_html=True)
         fecha_fin = st.date_input(
             "Fin",
             value=datetime.now().date(),
