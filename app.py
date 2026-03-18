@@ -14,7 +14,9 @@ import numpy as np
 from datetime import datetime, timedelta
 import warnings
 
-warnings.filterwarnings('ignore')
+# Me8: suprimir solo warnings específicos, no todos globalmente
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=DeprecationWarning, module='streamlit')
 
 # ─────────────────────────────────────────────
 # Configuración de la página
@@ -390,7 +392,7 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
         evolution_data.append({
             'Activo':            asset,
             'Nominales':         nom_fin,
-            'Precio Actual':     precio_fin,
+            'Precio Cierre':     precio_fin,   # Me5: es precio al fecha_fin, no "actual"
             'Valor Actual':      valor_fin,
             'Valor al Inicio':   valor_inicio,
             'Compras':           compras_en_periodo,
@@ -470,9 +472,9 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
             'Valor':     op['Monto'],
         })
 
-    # Fila de cierre: Valor Final
+    # Me7: fila de cierre siempre presente (muestra $0 si la posición fue cerrada)
     if nom_fin > 0:
-        avail_fin = ap[ap['Fecha'] <= pd.to_datetime(fecha_fin)]
+        avail_fin  = ap[ap['Fecha'] <= pd.to_datetime(fecha_fin)]
         precio_fin = avail_fin.iloc[-1]['Precio'] if not avail_fin.empty else 0
         detalle_data.append({
             'Fecha':     fecha_fin,
@@ -480,6 +482,14 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
             'Nominales': nom_fin,
             'Precio':    precio_fin,
             'Valor':     nom_fin * precio_fin,
+        })
+    elif detalle_data:   # hubo operaciones pero la posición quedó en 0
+        detalle_data.append({
+            'Fecha':     fecha_fin,
+            'Operación': 'Posición cerrada',
+            'Nominales': 0,
+            'Precio':    None,
+            'Valor':     0,
         })
 
     detalle_df = pd.DataFrame(detalle_data)
@@ -716,7 +726,13 @@ def main():
         # Métricas
         col1, col2, col3, col4, col5, col6 = st.columns(6)
         with col1:
-            _metric("Total Activos",   str(len(evolution_df)))
+            # Me4: distinguir activos abiertos de posiciones cerradas en el período
+            n_abiertos = int((evolution_df['Nominales'] > 0).sum())
+            n_cerrados = int((evolution_df['Nominales'] <= 0).sum())
+            label_act  = str(n_abiertos) if n_cerrados == 0 else (
+                f"{n_abiertos} ({n_cerrados} cerrado{'s' if n_cerrados > 1 else ''})"
+            )
+            _metric("Total Activos", label_act)
         with col2:
             _metric("Valor Total",     f"${evolution_df['Valor Actual'].sum():,.0f}")
         with col3:
@@ -736,7 +752,7 @@ def main():
         evo_display = evolution_df.copy()
         for col in ['Nominales']:
             evo_display[col] = evo_display[col].apply(_fmt_number)
-        for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
+        for col in ['Precio Cierre', 'Valor Actual', 'Valor al Inicio',
                     'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
             evo_display[col] = evo_display[col].apply(_fmt_money)
 
