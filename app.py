@@ -1416,7 +1416,7 @@ def main():
                 height=320,
                 margin=dict(l=0, r=10, t=30, b=0),
                 plot_bgcolor='#F0F2F6',
-                paper_bgcolor='transparent',
+                paper_bgcolor='rgba(0,0,0,0)',
             )
             st.plotly_chart(fig, use_container_width=True)
 
