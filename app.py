@@ -1050,7 +1050,7 @@ def main():
         f'<div style="background:#1A4B9B;border-radius:12px;padding:1.2rem 1.8rem;'
         f'margin-bottom:0.5rem;display:flex;align-items:center;justify-content:space-between;">'
         f'<div>'
-        f'<div style="font-size:1.4rem;font-weight:700;color:#FFFFFF;">Tu Cartera</div>'
+        f'<div style="font-size:1.4rem;font-weight:700;color:#FFFFFF;">Tus Inversiones</div>'
         f'<div style="font-size:0.82rem;color:rgba(255,255,255,0.75);margin-top:2px;">{fecha_str}</div>'
         f'</div>'
         f'<div style="font-size:0.78rem;font-weight:500;color:#FFFFFF;'
