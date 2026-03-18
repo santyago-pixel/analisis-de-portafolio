@@ -55,9 +55,16 @@ st.markdown("""
 # Carga de datos
 # ─────────────────────────────────────────────
 def load_data(filename='operaciones.xlsx'):
-    """Cargar datos desde operaciones.xlsx o archivo especificado."""
+    """Cargar datos desde operaciones.xlsx o archivo especificado.
+
+    Retorna (operaciones_mapped, precios_long, fx_rates) donde:
+      - operaciones_mapped: DataFrame con columnas Fecha, Tipo, Activo,
+        Cantidad, Precio, Monto (USD), Precio ARS, Monto ARS.
+      - precios_long: precios de bonos en USD en formato largo (sin columna ARS).
+      - fx_rates: DataFrame con columnas Fecha y ARS (tipo de cambio USD/ARS).
+    """
     try:
-        # Cargar hoja Operaciones
+        # ── Hoja Operaciones ─────────────────────────────────────────────
         operaciones = pd.read_excel(filename, sheet_name='Operaciones')
 
         operaciones_mapped = pd.DataFrame()
@@ -66,7 +73,23 @@ def load_data(filename='operaciones.xlsx'):
         operaciones_mapped['Activo']   = operaciones['Activo']
         operaciones_mapped['Cantidad'] = operaciones['Nominales']
         operaciones_mapped['Precio']   = operaciones['Precio']
-        operaciones_mapped['Monto']    = operaciones['Valor']
+
+        # Columna de monto en USD: puede llamarse 'Valor USD' o 'Valor'
+        if 'Valor USD' in operaciones.columns:
+            operaciones_mapped['Monto'] = operaciones['Valor USD']
+        elif 'Valor' in operaciones.columns:
+            operaciones_mapped['Monto'] = operaciones['Valor']
+        else:
+            st.error("No se encontró columna de Valor/Valor USD en la hoja Operaciones.")
+            return None, None, None
+
+        # Columnas ARS (pueden no existir en archivos más antiguos)
+        operaciones_mapped['Precio ARS'] = (
+            operaciones['Precio ARS'] if 'Precio ARS' in operaciones.columns else np.nan
+        )
+        operaciones_mapped['Monto ARS'] = (
+            operaciones['Valor ARS'] if 'Valor ARS' in operaciones.columns else np.nan
+        )
 
         # Me2: normalizar capitalización para que 'compra', 'VENTA', etc. funcionen
         operaciones_mapped['Tipo']   = operaciones_mapped['Tipo'].str.strip().str.title()
@@ -88,24 +111,98 @@ def load_data(filename='operaciones.xlsx'):
             ~(mask_bs & operaciones_mapped['Cantidad'].isna())
         ]
 
-        # Cargar hoja Precios
+        # ── Hoja Precios ─────────────────────────────────────────────────
         precios = pd.read_excel(filename, sheet_name='Precios')
         fecha_col = precios.columns[0]
         precios = precios.rename(columns={fecha_col: 'Fecha'})
-        precios_long = precios.melt(
+        precios['Fecha'] = pd.to_datetime(precios['Fecha'])
+
+        # Extraer tipo de cambio ARS ANTES del melt para que no aparezca como bono
+        if 'ARS' in precios.columns:
+            fx_rates = (
+                precios[['Fecha', 'ARS']]
+                .dropna(subset=['ARS'])
+                .sort_values('Fecha')
+                .reset_index(drop=True)
+            )
+            precios_para_melt = precios.drop(columns=['ARS'])
+        else:
+            fx_rates = pd.DataFrame(columns=['Fecha', 'ARS'])
+            precios_para_melt = precios
+
+        precios_long = precios_para_melt.melt(
             id_vars=['Fecha'],
             var_name='Activo',
             value_name='Precio'
         ).dropna()
 
-        return operaciones_mapped, precios_long
+        return operaciones_mapped, precios_long, fx_rates
 
     except FileNotFoundError:
         st.error(f"No se encontró el archivo '{filename}' en la carpeta del proyecto.")
-        return None, None
+        return None, None, None
     except Exception as e:
         st.error(f"Error al cargar el archivo: {str(e)}")
-        return None, None
+        return None, None, None
+
+
+# ─────────────────────────────────────────────
+# Helpers de moneda
+# ─────────────────────────────────────────────
+def _get_fx(fx_rates, fecha):
+    """Devuelve el último tipo de cambio ARS/USD disponible hasta `fecha`.
+
+    Usa la cotización de cierre del día (end-of-day), que es el estándar
+    para valuar posiciones en pesos. Para operaciones se usa el TC efectivo
+    que ya está capturado en las columnas Precio ARS / Monto ARS del Excel.
+    """
+    if fx_rates is None or fx_rates.empty:
+        return 1.0
+    avail = fx_rates[fx_rates['Fecha'] <= pd.to_datetime(fecha)]
+    return float(avail.iloc[-1]['ARS']) if not avail.empty else 1.0
+
+
+def _get_monto(op, moneda, fx_rates):
+    """Devuelve el monto de una operación en la moneda seleccionada.
+
+    En ARS: usa Monto ARS (TC efectivo al momento de la operación).
+    Fallback: si Monto ARS es NaN, convierte Monto USD × TC de cierre del día.
+    """
+    if moneda == 'ARS':
+        monto_ars = op.get('Monto ARS', np.nan)
+        if pd.notna(monto_ars) and monto_ars != 0:
+            return float(monto_ars)
+        # Fallback: TC de cierre como aproximación
+        fx = _get_fx(fx_rates, op['Fecha'])
+        return float(op['Monto']) * fx
+    return float(op['Monto'])
+
+
+def _get_precio_op(op, moneda, fx_rates):
+    """Devuelve el precio de una operación en la moneda seleccionada."""
+    if moneda == 'ARS':
+        precio_ars = op.get('Precio ARS', np.nan)
+        if pd.notna(precio_ars) and precio_ars != 0:
+            return float(precio_ars)
+        fx = _get_fx(fx_rates, op['Fecha'])
+        return float(op['Precio']) * fx
+    return float(op['Precio'])
+
+
+def _get_price_at_date(asset_prices, fecha, moneda, fx_rates):
+    """Precio de mercado de un activo a una fecha dada, en la moneda seleccionada.
+
+    Los precios en USD se obtienen de la hoja Precios (precio por nominal).
+    En ARS: precio_USD × TC de cierre del día (cotización end-of-day).
+    """
+    avail = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha)]
+    if avail.empty:
+        return 0.0
+    price_usd = float(avail.iloc[-1]['Precio'])
+    if moneda == 'ARS' and fx_rates is not None:
+        fx = _get_fx(fx_rates, fecha)
+        return price_usd * fx
+    return price_usd
 
 
 # ─────────────────────────────────────────────
@@ -153,7 +250,8 @@ def _find_last_reset(asset_ops_sorted):
 # ─────────────────────────────────────────────
 # Composición actual
 # ─────────────────────────────────────────────
-def calculate_current_portfolio(operaciones, precios, fecha_actual):
+def calculate_current_portfolio(operaciones, precios, fecha_actual,
+                                moneda='USD', fx_rates=None):
     """
     Calcula la composición actual de la cartera con lógica de reseteo.
 
@@ -201,7 +299,7 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
         else:
             ops = asset_ops_until.iloc[last_reset_pos + 1:]
 
-        # ── Precio más reciente (necesario también para C4) ──────────────
+        # ── Precio más reciente ──────────────────────────────────────────
         asset_prices = precios[precios['Activo'] == asset].sort_values('Fecha')
         available    = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_actual)]
         if available.empty:
@@ -213,8 +311,6 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
             continue
 
         # ── C4: Detectar ventas sin compra previa ────────────────────────
-        # Si el total de ventas supera el total de compras post-reset,
-        # se infiere una compra anterior al inicio de la base de datos.
         nota = ''
         buys_q  = ops[ops['Tipo'].str.strip() == 'Compra']['Cantidad'].sum()
         sells_q = ops[ops['Tipo'].str.strip() == 'Venta']['Cantidad'].sum()
@@ -223,15 +319,21 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
         deficit = sells_q - buys_q
         if deficit > 0:
             oldest_row   = asset_prices.iloc[0]
-            oldest_price = oldest_row['Precio']
+            oldest_price = float(oldest_row['Precio'])
             oldest_date  = oldest_row['Fecha']
+            oldest_monto = deficit * oldest_price
+            # En ARS: el monto sintético usa el TC más antiguo disponible
+            oldest_precio_ars = oldest_price * _get_fx(fx_rates, oldest_date) if moneda == 'ARS' else np.nan
+            oldest_monto_ars  = oldest_monto  * _get_fx(fx_rates, oldest_date) if moneda == 'ARS' else np.nan
             synthetic    = pd.DataFrame([{
-                'Fecha':    oldest_date,
-                'Tipo':     'Compra',
-                'Activo':   asset,
-                'Cantidad': deficit,
-                'Precio':   oldest_price,
-                'Monto':    deficit * oldest_price,
+                'Fecha':      oldest_date,
+                'Tipo':       'Compra',
+                'Activo':     asset,
+                'Cantidad':   deficit,
+                'Precio':     oldest_price,
+                'Monto':      oldest_monto,
+                'Precio ARS': oldest_precio_ars,
+                'Monto ARS':  oldest_monto_ars,
             }])
             ops  = pd.concat([synthetic, ops]).sort_values('Fecha').reset_index(drop=True)
             nota = (
@@ -242,9 +344,9 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
             )
 
         # ── Costo Promedio Ponderado ──────────────────────────────────────
-        # En Compra: se recalcula ponderando el lote nuevo con la posición previa.
-        # En Venta:  los nominales bajan pero el costo unitario no cambia.
-        # Amortizaciones: NO ajustan el costo (estándar broker argentino).
+        # Todos los montos se calculan en la moneda seleccionada (USD o ARS).
+        # En ARS se usa el TC efectivo de cada operación (columna Monto ARS),
+        # con fallback a Monto_USD × TC_cierre si Monto ARS no está disponible.
         current_nominals    = 0
         costo_unit_promedio = 0.0
         total_amort         = 0
@@ -253,26 +355,27 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
 
         for _, op in ops.iterrows():
             tipo = op['Tipo'].strip()
+            monto = _get_monto(op, moneda, fx_rates)
             if tipo == 'Compra':
                 costo_prev          = current_nominals * costo_unit_promedio
                 current_nominals   += op['Cantidad']
-                costo_unit_promedio = (costo_prev + op['Monto']) / current_nominals
+                costo_unit_promedio = (costo_prev + monto) / current_nominals
             elif tipo == 'Venta':
                 current_nominals -= op['Cantidad']
             else:
                 categoria = _clasificar_operacion(tipo)
                 if categoria == 'amortizacion':
-                    total_amort      += op['Monto']
+                    total_amort      += monto
                 elif categoria == 'cupon':
-                    total_cupones    += op['Monto']
+                    total_cupones    += monto
                 elif categoria == 'dividendo':
-                    total_dividendos += op['Monto']
+                    total_dividendos += monto
 
         if current_nominals <= 0:
             continue
 
         costo_posicion = current_nominals * costo_unit_promedio
-        current_price  = available.iloc[-1]['Precio']
+        current_price  = _get_price_at_date(asset_prices, fecha_actual, moneda, fx_rates)
         valor_actual   = current_nominals * current_price
         ganancia_no_r  = valor_actual - costo_posicion
         ganancia_total = ganancia_no_r + total_amort + total_cupones + total_dividendos
@@ -295,9 +398,10 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
 
 
 # ─────────────────────────────────────────────
-# Evolución histórica  (sin cambios respecto al original)
+# Evolución histórica
 # ─────────────────────────────────────────────
-def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin):
+def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
+                                  moneda='USD', fx_rates=None):
     """Calcular evolución de la cartera en un rango de fechas."""
     operaciones = operaciones.copy()
     precios = precios.copy()
@@ -332,13 +436,14 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
         nom_inicio = sales_inicio = divcup_inicio = 0
         for _, op in ops_until_inicio.iterrows():
             tipo = op['Tipo'].strip()
+            monto = _get_monto(op, moneda, fx_rates)
             if tipo == 'Compra':
                 nom_inicio   += op['Cantidad']
             elif tipo == 'Venta':
                 nom_inicio   -= op['Cantidad']
-                sales_inicio += op['Monto']
+                sales_inicio += monto
             elif _clasificar_operacion(tipo):
-                divcup_inicio += op['Monto']
+                divcup_inicio += monto
 
         # Omitir activos sin actividad relevante en el período
         if nom_inicio <= 0 and ops_en_rango.empty:
@@ -352,20 +457,22 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
 
         for _, op in ops_en_rango.iterrows():
             tipo = op['Tipo'].strip()
+            monto = _get_monto(op, moneda, fx_rates)
             if tipo == 'Compra':
                 nom_fin            += op['Cantidad']
-                compras_en_periodo += op['Monto']
+                compras_en_periodo += monto
             elif tipo == 'Venta':
                 nom_fin   -= op['Cantidad']
-                sales_fin += op['Monto']
+                sales_fin += monto
             elif _clasificar_operacion(tipo):
-                divcup_fin += op['Monto']
+                divcup_fin += monto
 
-        # Precios inicio / fin (sort garantiza iloc[-1] correcto — M4)
-        asset_prices  = precios[precios['Activo'] == asset].sort_values('Fecha')
-        avail_inicio  = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_inicio)]
-        avail_fin     = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_fin)]
+        # Precios inicio / fin (M4: sort garantiza iloc[-1] correcto)
+        asset_prices = precios[precios['Activo'] == asset].sort_values('Fecha')
+
         # M3: advertir si faltan precios
+        avail_inicio = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_inicio)]
+        avail_fin    = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_fin)]
         if avail_inicio.empty and nom_inicio > 0:
             st.warning(
                 f"⚠️ {asset}: sin precio al {fecha_inicio.strftime('%d/%m/%Y')}. "
@@ -376,8 +483,9 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
                 f"⚠️ {asset}: sin precio al {fecha_fin.strftime('%d/%m/%Y')}. "
                 f"Valor Final = $0."
             )
-        precio_inicio = avail_inicio.iloc[-1]['Precio'] if not avail_inicio.empty else 0
-        precio_fin    = avail_fin.iloc[-1]['Precio']    if not avail_fin.empty    else 0
+
+        precio_inicio = _get_price_at_date(asset_prices, fecha_inicio, moneda, fx_rates)
+        precio_fin    = _get_price_at_date(asset_prices, fecha_fin,    moneda, fx_rates)
 
         # Filtrar activos con nominales finales negativos (error de datos, igual que Sección 1)
         if nom_fin < 0:
@@ -405,9 +513,11 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
 
 
 # ─────────────────────────────────────────────
-# Detalle por activo  (sin cambios respecto al original)
+# Detalle por activo
 # ─────────────────────────────────────────────
-def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio, fecha_fin):
+def mostrar_analisis_detallado_activo(operaciones, precios, activo,
+                                      fecha_inicio, fecha_fin,
+                                      moneda='USD', fx_rates=None):
     """Mostrar análisis detallado de un activo específico."""
     operaciones = operaciones.copy()
     precios = precios.copy()
@@ -417,7 +527,6 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
     asset_ops = operaciones[operaciones['Activo'] == activo].sort_values('Fecha')
 
     # C1/C2: Último reset hasta fecha_fin — mismo criterio que Sección 1 y Sección 2.
-    # Filtra por posición iloc para incluir ops del mismo día post-reset (C2).
     ops_until_fin_d = asset_ops[asset_ops['Fecha'] <= pd.to_datetime(fecha_fin)]
     last_reset_date, last_reset_pos = _find_last_reset(ops_until_fin_d)
 
@@ -429,7 +538,7 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
     # Nominales al inicio (ops ESTRICTAMENTE antes de fecha_inicio → sin doble conteo)
     nom_inicio = 0
     for _, op in ops_since_reset.iterrows():
-        if op['Fecha'] >= pd.to_datetime(fecha_inicio):   # FIXED: >= evita doble conteo
+        if op['Fecha'] >= pd.to_datetime(fecha_inicio):
             break
         if op['Tipo'].strip() == 'Compra':
             nom_inicio += op['Cantidad']
@@ -442,8 +551,7 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
 
     # M7: solo agregar fila "Valor Inicial" si había posición al inicio del período
     if nom_inicio > 0:
-        avail = ap[ap['Fecha'] <= pd.to_datetime(fecha_inicio)]
-        precio_inicio = avail.iloc[-1]['Precio'] if not avail.empty else 0
+        precio_inicio = _get_price_at_date(ap, fecha_inicio, moneda, fx_rates)
         detalle_data.append({
             'Fecha':     fecha_inicio,
             'Operación': 'Valor Inicial',
@@ -468,14 +576,13 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
             'Fecha':     op['Fecha'],
             'Operación': op['Tipo'],
             'Nominales': op['Cantidad'],
-            'Precio':    op['Precio'],
-            'Valor':     op['Monto'],
+            'Precio':    _get_precio_op(op, moneda, fx_rates),
+            'Valor':     _get_monto(op, moneda, fx_rates),
         })
 
     # Me7: fila de cierre siempre presente (muestra $0 si la posición fue cerrada)
     if nom_fin > 0:
-        avail_fin  = ap[ap['Fecha'] <= pd.to_datetime(fecha_fin)]
-        precio_fin = avail_fin.iloc[-1]['Precio'] if not avail_fin.empty else 0
+        precio_fin = _get_price_at_date(ap, fecha_fin, moneda, fx_rates)
         detalle_data.append({
             'Fecha':     fecha_fin,
             'Operación': 'Valor Final',
@@ -501,10 +608,10 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
             lambda x: f"{x:,.0f}" if pd.notna(x) and x != 0 else ""
         )
         display['Precio'] = display['Precio'].apply(
-            lambda x: f"${x:,.2f}" if pd.notna(x) and x != 0 else ""
+            lambda x: _fmt_price(x, moneda) if pd.notna(x) and x != 0 else ""
         )
         display['Valor'] = display['Valor'].apply(
-            lambda x: f"${x:,.2f}" if pd.notna(x) and x != 0 else ""
+            lambda x: _fmt_money(x, moneda) if pd.notna(x) and x != 0 else ""
         )
 
         st.markdown(f"**Operaciones detalladas para {activo}:**")
@@ -535,8 +642,30 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
 # ─────────────────────────────────────────────
 # Helpers de formato
 # ─────────────────────────────────────────────
-def _fmt_money(x):
-    return f"${x:,.2f}" if pd.notna(x) else ""
+def _fmt_money(x, moneda='USD'):
+    """Formatea un monto monetario según la moneda.
+
+    USD: dos decimales (ej: $1,234.56)
+    ARS: sin decimales porque los valores en pesos son grandes (ej: $1,234,567)
+    """
+    if not pd.notna(x):
+        return ""
+    if moneda == 'ARS':
+        return f"${x:,.0f}"
+    return f"${x:,.2f}"
+
+
+def _fmt_price(x, moneda='USD'):
+    """Formatea un precio según la moneda.
+
+    USD: cuatro decimales para mayor precisión.
+    ARS: dos decimales.
+    """
+    if not pd.notna(x):
+        return ""
+    if moneda == 'ARS':
+        return f"${x:,.2f}"
+    return f"${x:,.4f}"
 
 
 def _fmt_number(x):
@@ -597,6 +726,20 @@ def main():
             help="Fecha de fin para el análisis de evolución"
         )
 
+        st.markdown("---")
+        st.subheader("Moneda")
+        moneda = st.radio(
+            "Visualizar en",
+            options=["USD", "ARS"],
+            index=0,
+            horizontal=True,
+            help=(
+                "USD: valores en dólares (precio de mercado).\n"
+                "ARS: valores en pesos argentinos. "
+                "Operaciones al TC efectivo; precios al TC de cierre del día."
+            )
+        )
+
     # ── Archivo a usar ────────────────────────
     if uploaded_file is not None:
         # M5: nombre único por sesión para evitar colisiones entre usuarios
@@ -616,7 +759,7 @@ def main():
         return
 
     # ── Carga de datos ────────────────────────
-    operaciones, precios = load_data(filename)
+    operaciones, precios, fx_rates = load_data(filename)
 
     if operaciones is None or precios is None:
         st.error(
@@ -625,13 +768,28 @@ def main():
         )
         return
 
+    # Advertencia si modo ARS pero no hay tipos de cambio
+    if moneda == 'ARS' and (fx_rates is None or fx_rates.empty):
+        st.warning(
+            "⚠️ Modo ARS seleccionado pero no se encontró la columna 'ARS' (tipo de cambio) "
+            "en la hoja Precios. Los valores se mostrarán en USD."
+        )
+        moneda = 'USD'
+
+    # Etiqueta de moneda para mostrar en headers
+    lbl_moneda = "ARS" if moneda == 'ARS' else "USD"
+
     # ══════════════════════════════════════════
     # SECCIÓN 1 – COMPOSICIÓN ACTUAL
     # ══════════════════════════════════════════
-    portfolio_df = calculate_current_portfolio(operaciones, precios, fecha_actual)
+    portfolio_df = calculate_current_portfolio(
+        operaciones, precios, fecha_actual, moneda=moneda, fx_rates=fx_rates
+    )
 
     st.header("Composición Actual de la Cartera")
-    st.markdown(f"*Calculado al {fecha_actual.strftime('%d/%m/%Y')}*")
+    st.markdown(
+        f"*Calculado al {fecha_actual.strftime('%d/%m/%Y')} — valores en **{lbl_moneda}***"
+    )
 
     if portfolio_df.empty:
         st.warning("No hay activos con nominales positivos en la fecha seleccionada.")
@@ -650,23 +808,26 @@ def main():
         with col1:
             _metric("Total Activos",       str(len(portfolio_df)))
         with col2:
-            _metric("Valor de Mercado",    f"${total_valor_mercado:,.0f}")
+            _metric("Valor de Mercado",    _fmt_money(total_valor_mercado, moneda))
         with col3:
-            _metric("Costo Total",         f"${total_costo:,.0f}")
+            _metric("Costo Total",         _fmt_money(total_costo, moneda))
         with col4:
-            _metric("Ganancias Realizadas",f"${total_ganancia_r:,.0f}")
+            _metric("Ganancias Realizadas", _fmt_money(total_ganancia_r, moneda))
         with col5:
             _metric(
                 "Ganancias no Realizadas",
-                f"${total_ganancia_no_r:,.0f}",
+                _fmt_money(total_ganancia_no_r, moneda),
                 f"{pct_no_r:.1f}%"
             )
         with col6:
-            _metric("Amort / Cup / Div",
-                    f"${total_amort:,.0f} / ${total_cup:,.0f} / ${total_div:,.0f}")
+            _metric(
+                "Amort / Cup / Div",
+                f"{_fmt_money(total_amort, moneda)} / "
+                f"{_fmt_money(total_cup, moneda)} / "
+                f"{_fmt_money(total_div, moneda)}"
+            )
 
         # ── Tabla ────────────────────────────
-        # Columnas visibles (excluimos la interna _Valor Actual)
         cols_display = [
             'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
             'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
@@ -674,13 +835,13 @@ def main():
 
         display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].copy()
         display_df['Nominales']      = display_df['Nominales'].apply(_fmt_number)
-        display_df['Precio Actual']  = display_df['Precio Actual'].apply(_fmt_money)
-        display_df['Valor Actual']   = display_df['Valor Actual'].apply(_fmt_money)
-        display_df['Costo']          = display_df['Costo'].apply(_fmt_money)
-        display_df['Amortizaciones'] = display_df['Amortizaciones'].apply(_fmt_money)
-        display_df['Cupones']        = display_df['Cupones'].apply(_fmt_money)
-        display_df['Dividendos']     = display_df['Dividendos'].apply(_fmt_money)
-        display_df['Ganancia Total'] = display_df['Ganancia Total'].apply(_fmt_money)
+        display_df['Precio Actual']  = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
+        display_df['Valor Actual']   = display_df['Valor Actual'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Costo']          = display_df['Costo'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Amortizaciones'] = display_df['Amortizaciones'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Cupones']        = display_df['Cupones'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Dividendos']     = display_df['Dividendos'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Ganancia Total'] = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
 
         st.dataframe(
             display_df,
@@ -708,17 +869,22 @@ def main():
         st.download_button(
             label="📥 Descargar CSV",
             data=csv,
-            file_name=f"composicion_cartera_{fecha_actual.strftime('%Y%m%d')}.csv",
+            file_name=f"composicion_cartera_{fecha_actual.strftime('%Y%m%d')}_{lbl_moneda}.csv",
             mime="text/csv",
         )
 
     # ══════════════════════════════════════════
-    # SECCIÓN 2 – EVOLUCIÓN HISTÓRICA  (sin cambios)
+    # SECCIÓN 2 – EVOLUCIÓN HISTÓRICA
     # ══════════════════════════════════════════
     st.header("Análisis de la Evolución de la Cartera")
-    st.markdown(f"*Análisis del {fecha_inicio.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')}*")
+    st.markdown(
+        f"*Análisis del {fecha_inicio.strftime('%d/%m/%Y')} al "
+        f"{fecha_fin.strftime('%d/%m/%Y')} — valores en **{lbl_moneda}***"
+    )
 
-    evolution_df = calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
+    evolution_df = calculate_portfolio_evolution(
+        operaciones, precios, fecha_inicio, fecha_fin, moneda=moneda, fx_rates=fx_rates
+    )
 
     if evolution_df.empty:
         st.warning("No hay datos de evolución para el rango de fechas seleccionado.")
@@ -734,27 +900,29 @@ def main():
             )
             _metric("Total Activos", label_act)
         with col2:
-            _metric("Valor Total",     f"${evolution_df['Valor Actual'].sum():,.0f}")
+            _metric("Valor Total",     _fmt_money(evolution_df['Valor Actual'].sum(), moneda))
         with col3:
-            _metric("Valor al Inicio", f"${evolution_df['Valor al Inicio'].sum():,.0f}")
+            _metric("Valor al Inicio", _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda))
         with col4:
-            _metric("Compras en Período", f"${evolution_df['Compras'].sum():,.0f}")
+            _metric("Compras en Período", _fmt_money(evolution_df['Compras'].sum(), moneda))
         with col5:
             flujos = evolution_df['Ventas'].sum() + evolution_df['Amort / Cup / Div'].sum()
-            _metric("Ventas + Flujos", f"${flujos:,.0f}")
+            _metric("Ventas + Flujos", _fmt_money(flujos, moneda))
         with col6:
             total_gain  = evolution_df['Ganancia Total'].sum()
             base        = evolution_df['Valor al Inicio'].sum() + evolution_df['Compras'].sum()
             pct_evo     = (total_gain / base * 100) if base > 0 else 0
-            _metric("Ganancia Total",  f"${total_gain:,.0f}", f"{pct_evo:.1f}%")
+            _metric("Ganancia Total",  _fmt_money(total_gain, moneda), f"{pct_evo:.1f}%")
 
         # Tabla
         evo_display = evolution_df.copy()
-        for col in ['Nominales']:
-            evo_display[col] = evo_display[col].apply(_fmt_number)
+        evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
         for col in ['Precio Cierre', 'Valor Actual', 'Valor al Inicio',
                     'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
-            evo_display[col] = evo_display[col].apply(_fmt_money)
+            if col == 'Precio Cierre':
+                evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
+            else:
+                evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
 
         st.dataframe(
             evo_display,
@@ -769,7 +937,7 @@ def main():
         st.download_button(
             label="📥 Descargar CSV Evolución",
             data=csv_evo,
-            file_name=f"evolucion_cartera_{fecha_inicio.strftime('%Y%m%d')}_{fecha_fin.strftime('%Y%m%d')}.csv",
+            file_name=f"evolucion_cartera_{fecha_inicio.strftime('%Y%m%d')}_{fecha_fin.strftime('%Y%m%d')}_{lbl_moneda}.csv",
             mime="text/csv",
         )
 
@@ -788,7 +956,8 @@ def main():
 
         if activo_sel and activo_sel != "Seleccionar":
             mostrar_analisis_detallado_activo(
-                operaciones, precios, activo_sel, fecha_inicio, fecha_fin
+                operaciones, precios, activo_sel, fecha_inicio, fecha_fin,
+                moneda=moneda, fx_rates=fx_rates
             )
 
 
