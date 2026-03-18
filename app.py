@@ -28,25 +28,154 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS personalizado
+# ── CSS personalizado ─────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .main > div {
-        padding-top: 1rem;
-    }
-    .metric-card {
-        background: #f0f2f6;
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 0.5rem 0;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-    .positive {
-        color: #00C851;
-    }
-    .negative {
-        color: #ff4444;
-    }
+
+/* ══════════════════════════════════════════════
+   TIPOGRAFÍA  —  Inter (Google Fonts)
+══════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+html, body, [class*="css"], .stApp, button, input, select, textarea {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+/* ══════════════════════════════════════════════
+   FONDO Y CONTENEDOR PRINCIPAL
+══════════════════════════════════════════════ */
+.stApp {
+    background-color: #F0F2F6 !important;
+}
+.main .block-container {
+    padding-top: 1.5rem !important;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
+    max-width: 1400px !important;
+}
+
+/* ══════════════════════════════════════════════
+   CHROME DE STREAMLIT  —  ocultar / reestilizar
+══════════════════════════════════════════════ */
+#MainMenu          { visibility: hidden; }
+footer             { visibility: hidden; }
+[data-testid="stToolbar"] { visibility: hidden; }
+[data-testid="stHeader"] {
+    background-color: #1B2333 !important;
+    border-bottom: 3px solid #CC0000 !important;
+}
+
+/* ══════════════════════════════════════════════
+   SIDEBAR
+══════════════════════════════════════════════ */
+[data-testid="stSidebar"] {
+    background-color: #FFFFFF !important;
+    border-right: 1px solid #E5E7EB !important;
+}
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: #1B2333 !important;
+    font-weight: 600 !important;
+}
+[data-testid="stSidebar"] label {
+    font-size: 0.83rem !important;
+    font-weight: 500 !important;
+    color: #374151 !important;
+}
+[data-testid="stSidebar"] hr {
+    border-color: #E5E7EB !important;
+    margin: 0.8rem 0 !important;
+}
+
+/* ══════════════════════════════════════════════
+   TÍTULOS NATIVOS DE STREAMLIT
+   (usados solo como fallback; normalmente
+    reemplazados por _section_header)
+══════════════════════════════════════════════ */
+h1 { font-size: 1.5rem !important; font-weight: 700 !important; color: #1B2333 !important; }
+h2 { font-size: 1.2rem !important; font-weight: 600 !important; color: #1B2333 !important; }
+h3 { font-size: 1.0rem !important; font-weight: 600 !important; color: #1B2333 !important; }
+
+/* ══════════════════════════════════════════════
+   DATAFRAMES / TABLAS
+══════════════════════════════════════════════ */
+[data-testid="stDataFrame"] > div {
+    border-radius: 10px !important;
+    overflow: hidden !important;
+    border: 1px solid #E5E7EB !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06) !important;
+    background: #FFFFFF !important;
+}
+
+/* ══════════════════════════════════════════════
+   BOTONES DE DESCARGA
+══════════════════════════════════════════════ */
+[data-testid="stDownloadButton"] button {
+    background-color: transparent !important;
+    color: #CC0000 !important;
+    border: 1.5px solid #CC0000 !important;
+    border-radius: 6px !important;
+    font-weight: 500 !important;
+    font-size: 0.82rem !important;
+    padding: 0.3rem 0.9rem !important;
+    transition: background 0.15s ease, color 0.15s ease !important;
+}
+[data-testid="stDownloadButton"] button:hover {
+    background-color: #CC0000 !important;
+    color: #FFFFFF !important;
+}
+
+/* ══════════════════════════════════════════════
+   FILE UPLOADER
+══════════════════════════════════════════════ */
+[data-testid="stFileUploader"] {
+    border-radius: 8px !important;
+}
+
+/* ══════════════════════════════════════════════
+   SELECTBOX  /  DATE INPUT
+══════════════════════════════════════════════ */
+[data-testid="stSelectbox"] > div > div,
+[data-testid="stDateInput"]  > div > div {
+    border-radius: 6px !important;
+    border-color: #D1D5DB !important;
+    font-size: 0.88rem !important;
+}
+
+/* ══════════════════════════════════════════════
+   RADIO (toggle de moneda)
+══════════════════════════════════════════════ */
+[data-testid="stRadio"] label span {
+    font-size: 0.88rem !important;
+    font-weight: 500 !important;
+}
+
+/* ══════════════════════════════════════════════
+   ALERTAS  (warning / error / info / success)
+══════════════════════════════════════════════ */
+[data-testid="stAlert"] {
+    border-radius: 8px !important;
+    border-left-width: 4px !important;
+    font-size: 0.85rem !important;
+}
+
+/* ══════════════════════════════════════════════
+   CAPTION / NOTAS AL PIE
+══════════════════════════════════════════════ */
+[data-testid="stCaptionContainer"] p {
+    color: #9CA3AF !important;
+    font-size: 0.78rem !important;
+}
+
+/* ══════════════════════════════════════════════
+   DIVIDER NATIVO
+══════════════════════════════════════════════ */
+hr {
+    border-color: #E5E7EB !important;
+    margin: 1.2rem 0 !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -725,21 +854,61 @@ def _fmt_number(x):
 
 
 def _metric(label, value_str, sub_str=None):
-    st.markdown(
-        f'<div style="text-align:center;font-size:0.8em;">{label}</div>',
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        f'<div style="text-align:center;font-size:1.6em;font-weight:bold;">{value_str}</div>',
-        unsafe_allow_html=True
-    )
+    """Card de métrica estilo dashboard financiero.
+
+    Fondo blanco, label en gris uppercase, valor grande en negrita,
+    delta opcional con flecha y color verde/rojo (M2).
+    """
+    delta_html = ''
     if sub_str:
-        # M2: rojo si el subtítulo es negativo, verde si es positivo
-        color = '#ff4444' if str(sub_str).strip().startswith('-') else '#00C851'
-        st.markdown(
-            f'<div style="text-align:center;font-size:1.1em;color:{color};">{sub_str}</div>',
-            unsafe_allow_html=True
+        # M2: rojo si negativo, verde si positivo
+        is_neg = str(sub_str).strip().startswith('-')
+        color  = '#DC2626' if is_neg else '#16A34A'
+        arrow  = '▼' if is_neg else '▲'
+        delta_html = (
+            f'<div style="display:flex;align-items:center;gap:3px;margin-top:5px;">'
+            f'<span style="font-size:0.78rem;font-weight:600;color:{color};">'
+            f'{arrow} {sub_str}</span></div>'
         )
+
+    st.markdown(
+        f'''<div style="
+                background:#FFFFFF;
+                border-radius:10px;
+                padding:1rem 1.1rem 0.9rem;
+                border:1px solid #E5E7EB;
+                box-shadow:0 1px 4px rgba(0,0,0,0.06);
+                min-height:90px;">
+            <div style="font-size:0.68rem;font-weight:600;color:#6B7280;
+                        text-transform:uppercase;letter-spacing:0.55px;
+                        margin-bottom:6px;">{label}</div>
+            <div style="font-size:1.25rem;font-weight:700;color:#1B2333;
+                        line-height:1.25;word-break:break-word;">{value_str}</div>
+            {delta_html}
+        </div>''',
+        unsafe_allow_html=True
+    )
+
+
+def _section_header(title, subtitle=None):
+    """Encabezado de sección con barra roja lateral, título y subtítulo opcional."""
+    sub_html = (
+        f'<div style="font-size:0.83rem;color:#6B7280;margin-top:3px;">{subtitle}</div>'
+        if subtitle else ''
+    )
+    st.markdown(
+        f'''<div style="display:flex;align-items:flex-start;gap:11px;
+                        margin:2rem 0 0.75rem;">
+            <div style="width:4px;min-height:28px;background:#CC0000;
+                        border-radius:2px;flex-shrink:0;margin-top:3px;"></div>
+            <div>
+                <div style="font-size:1.2rem;font-weight:700;color:#1B2333;
+                            line-height:1.25;">{title}</div>
+                {sub_html}
+            </div>
+        </div>''',
+        unsafe_allow_html=True
+    )
 
 
 # ─────────────────────────────────────────────
@@ -749,7 +918,19 @@ def main():
 
     # ── Sidebar ──────────────────────────────
     with st.sidebar:
-        st.header("Configuración")
+        # Logo / branding
+        st.markdown(
+            '''<div style="padding:0.6rem 0 1rem;border-bottom:2px solid #CC0000;
+                           margin-bottom:1.2rem;">
+                <div style="font-size:1.05rem;font-weight:700;color:#1B2333;">
+                    📊 Portfolio Tracker
+                </div>
+                <div style="font-size:0.72rem;color:#6B7280;margin-top:2px;">
+                    Análisis de Cartera de Inversión
+                </div>
+            </div>''',
+            unsafe_allow_html=True
+        )
 
         uploaded_file = st.file_uploader(
             "Cargar archivo Excel diferente",
@@ -831,6 +1012,29 @@ def main():
     # Etiqueta de moneda para mostrar en headers
     lbl_moneda = "ARS" if moneda == 'ARS' else "USD"
 
+    # ── Hero card ─────────────────────────────────────────────────────────────
+    # Encabezado principal con nombre de la app y fecha, estilo "Tu dinero hoy"
+    st.markdown(
+        f'''<div style="background:#1B2333;border-radius:12px;
+                        padding:1.2rem 1.8rem;margin-bottom:0.5rem;
+                        display:flex;align-items:center;justify-content:space-between;">
+            <div>
+                <div style="font-size:1.4rem;font-weight:700;color:#FFFFFF;">
+                    Tu Cartera
+                </div>
+                <div style="font-size:0.82rem;color:#9CA3AF;margin-top:2px;">
+                    {fecha_actual.strftime("%d de %B de %Y").capitalize()}
+                </div>
+            </div>
+            <div style="font-size:0.78rem;font-weight:500;color:#CC0000;
+                        background:rgba(204,0,0,0.12);padding:4px 12px;
+                        border-radius:20px;border:1px solid rgba(204,0,0,0.3);">
+                {lbl_moneda}
+            </div>
+        </div>''',
+        unsafe_allow_html=True
+    )
+
     # ══════════════════════════════════════════
     # SECCIÓN 1 – COMPOSICIÓN ACTUAL
     # ══════════════════════════════════════════
@@ -839,9 +1043,9 @@ def main():
         live_prices=live_prices, live_fx=live_fx
     )
 
-    st.header("Composición Actual de la Cartera")
-    st.markdown(
-        f"*Calculado al {fecha_actual.strftime('%d/%m/%Y')} — valores en **{lbl_moneda}***"
+    _section_header(
+        "Composición Actual de la Cartera",
+        f"Calculado al {fecha_actual.strftime('%d/%m/%Y')} — valores en {lbl_moneda}"
     )
 
     if portfolio_df.empty:
@@ -929,10 +1133,9 @@ def main():
     # ══════════════════════════════════════════
     # SECCIÓN 2 – EVOLUCIÓN HISTÓRICA
     # ══════════════════════════════════════════
-    st.header("Análisis de la Evolución de la Cartera")
-    st.markdown(
-        f"*Análisis del {fecha_inicio.strftime('%d/%m/%Y')} al "
-        f"{fecha_fin.strftime('%d/%m/%Y')} — valores en **{lbl_moneda}***"
+    _section_header(
+        "Análisis de la Evolución de la Cartera",
+        f"Del {fecha_inicio.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')} — valores en {lbl_moneda}"
     )
 
     evolution_df = calculate_portfolio_evolution(
@@ -998,7 +1201,7 @@ def main():
     # ── Detalle por activo ───────────────────
     if not evolution_df.empty:
         st.markdown("---")
-        st.subheader("📋 Análisis Detallado de Evolución por Activo")
+        _section_header("Análisis Detallado de Evolución por Activo")
 
         activos_disponibles = ["Seleccionar"] + evolution_df['Activo'].tolist()
         activo_sel = st.selectbox(
