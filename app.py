@@ -51,7 +51,9 @@ html, body, [class*="css"], .stApp, button, input, select, textarea {
 [data-testid="stSidebar"]        { display: none !important; }
 [data-testid="collapsedControl"] { display: none !important; }
 /* Centrar contenido principal con márgenes blancos a los costados */
-.main .block-container {
+.main .block-container,
+[data-testid="block-container"],
+div.block-container {
     background-color: #F0F2F6 !important;
     padding-top: 1.5rem !important;
     padding-left: 3rem !important;
@@ -60,6 +62,12 @@ html, body, [class*="css"], .stApp, button, input, select, textarea {
     margin-left: auto !important;
     margin-right: auto !important;
     min-height: 100vh !important;
+    box-shadow: 4px 0 16px rgba(0,0,0,0.04), -4px 0 16px rgba(0,0,0,0.04) !important;
+}
+/* La sección main debe ser transparente para que el blanco del stApp se vea a los costados */
+section[data-testid="stMain"],
+.main {
+    background-color: transparent !important;
 }
 
 /* ══════════════════════════════════════════════
