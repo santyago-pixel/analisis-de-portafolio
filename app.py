@@ -1267,7 +1267,8 @@ def main():
         summary_cash = pd.DataFrame([{
             'Valor Inicial (tít+cash)': _fmt_money(valor_inicial_total, moneda),
             'Flujos Netos':             _fmt_money(flujos_netos, moneda),
-            'Valor Final (tít+cash)':   _fmt_money(valor_final_total, moneda),
+            'Valor Final Títulos':      _fmt_money(titulos_fin, moneda),
+            'Valor Final Cash':         _fmt_money(cash_fin, moneda),
             'Ganancia Total':           f"{_fmt_money(ganancia_cash, moneda)} {pct_str_cash}",
         }])
         st.dataframe(summary_cash, use_container_width=True, hide_index=True)
