@@ -370,15 +370,15 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
         ganancia_total     = (valor_fin - valor_inicio - compras_en_periodo) + div_cup_en_periodo + ventas_en_periodo
 
         evolution_data.append({
-            'Activo':          asset,
-            'Nominales':       nom_fin,
-            'Precio Actual':   precio_fin,
-            'Valor Actual':    valor_fin,
-            'Valor al Inicio': valor_inicio,
-            'Compras':         compras_en_periodo,
-            'Ventas':          ventas_en_periodo,
-            'Div - Cupones':   div_cup_en_periodo,
-            'Ganancia Total':  ganancia_total,
+            'Activo':              asset,
+            'Nominales':           nom_fin,
+            'Precio Actual':       precio_fin,
+            'Valor Actual':        valor_fin,
+            'Valor al Inicio':     valor_inicio,
+            'Compras':             compras_en_periodo,
+            'Ventas':              ventas_en_periodo,
+            'Amort / Cup / Div':   div_cup_en_periodo,
+            'Ganancia Total':      ganancia_total,
         })
 
     return pd.DataFrame(evolution_data)
@@ -677,7 +677,7 @@ def main():
         with col4:
             _metric("Compras en Período", f"${evolution_df['Compras'].sum():,.0f}")
         with col5:
-            flujos = evolution_df['Ventas'].sum() + evolution_df['Div - Cupones'].sum()
+            flujos = evolution_df['Ventas'].sum() + evolution_df['Amort / Cup / Div'].sum()
             _metric("Ventas + Flujos", f"${flujos:,.0f}")
         with col6:
             total_gain  = evolution_df['Ganancia Total'].sum()
@@ -690,7 +690,7 @@ def main():
         for col in ['Nominales']:
             evo_display[col] = evo_display[col].apply(_fmt_number)
         for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
-                    'Compras', 'Ventas', 'Div - Cupones', 'Ganancia Total']:
+                    'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
             evo_display[col] = evo_display[col].apply(_fmt_money)
 
         st.dataframe(
