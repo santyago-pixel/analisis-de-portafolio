@@ -120,15 +120,21 @@ def _clasificar_operacion(tipo: str):
     return None
 
 
-def _find_last_reset(asset_ops_until_date):
+def _find_last_reset(asset_ops_sorted):
     """
-    Recorre las operaciones y devuelve la fecha del último reset a cero
-    (cuando los nominales pasan de positivo a ≤ 0).
-    Retorna None si nunca ocurrió un reset.
+    Recorre las operaciones y devuelve (fecha_reset, pos_reset) del último
+    momento en que los nominales pasan de positivo a ≤ 0.
+
+    Retorna (None, -1) si nunca ocurrió un reset.
+
+    pos_reset es el índice iloc de la operación que causó el reset.
+    Usarlo como ops.iloc[pos_reset + 1:] garantiza que operaciones del
+    mismo día posteriores al reset (C2) sí queden incluidas en ops_since_reset.
     """
     running = 0
     last_reset_date = None
-    for _, op in asset_ops_until_date.iterrows():
+    last_reset_pos  = -1
+    for i, (_, op) in enumerate(asset_ops_sorted.iterrows()):
         prev = running
         if op['Tipo'].strip() == 'Compra':
             running += op['Cantidad']
@@ -136,8 +142,9 @@ def _find_last_reset(asset_ops_until_date):
             running -= op['Cantidad']
         if prev > 0 and running <= 0:
             last_reset_date = op['Fecha']
+            last_reset_pos  = i
             running = 0
-    return last_reset_date
+    return last_reset_date, last_reset_pos
 
 
 # ─────────────────────────────────────────────
@@ -183,14 +190,13 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual):
         if asset_ops_until.empty:
             continue
 
-        # Último reset a cero
-        last_reset_date = _find_last_reset(asset_ops_until)
+        # Último reset a cero (C2: filtrar por posición iloc, no por fecha)
+        last_reset_date, last_reset_pos = _find_last_reset(asset_ops_until)
 
-        # Operaciones desde el reset
         if last_reset_date is None:
             ops = asset_ops_until
         else:
-            ops = asset_ops_until[asset_ops_until['Fecha'] > last_reset_date]
+            ops = asset_ops_until.iloc[last_reset_pos + 1:]
 
         # ── Precio más reciente (necesario también para C4) ──────────────
         asset_prices = precios[precios['Activo'] == asset].sort_values('Fecha')
@@ -296,15 +302,15 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin)
     for asset in assets:
         asset_ops = operaciones[operaciones['Activo'] == asset].sort_values('Fecha')
 
-        # C1/C6: Último reset hasta fecha_fin — mismo criterio que Sección 1.
-        # Detecta resets DENTRO del período (no solo antes de fecha_inicio).
+        # C1/C2/C6: Último reset hasta fecha_fin — mismo criterio que Sección 1.
+        # Filtra por posición iloc para incluir ops del mismo día post-reset (C2).
         ops_until_fin   = asset_ops[asset_ops['Fecha'] <= pd.to_datetime(fecha_fin)]
-        last_reset_date = _find_last_reset(ops_until_fin)
+        last_reset_date, last_reset_pos = _find_last_reset(ops_until_fin)
 
         if last_reset_date is None:
             ops_since_reset = ops_until_fin
         else:
-            ops_since_reset = ops_until_fin[ops_until_fin['Fecha'] > last_reset_date]
+            ops_since_reset = ops_until_fin.iloc[last_reset_pos + 1:]
 
         # Acumulados hasta inicio (ops ESTRICTAMENTE antes de fecha_inicio)
         ops_until_inicio = ops_since_reset[
@@ -391,14 +397,15 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo, fecha_inicio
 
     asset_ops = operaciones[operaciones['Activo'] == activo].sort_values('Fecha')
 
-    # C1: Último reset hasta fecha_fin — mismo criterio que Sección 1 y Sección 2.
+    # C1/C2: Último reset hasta fecha_fin — mismo criterio que Sección 1 y Sección 2.
+    # Filtra por posición iloc para incluir ops del mismo día post-reset (C2).
     ops_until_fin_d = asset_ops[asset_ops['Fecha'] <= pd.to_datetime(fecha_fin)]
-    last_reset_date = _find_last_reset(ops_until_fin_d)
+    last_reset_date, last_reset_pos = _find_last_reset(ops_until_fin_d)
 
     if last_reset_date is None:
         ops_since_reset = ops_until_fin_d
     else:
-        ops_since_reset = ops_until_fin_d[ops_until_fin_d['Fecha'] > last_reset_date]
+        ops_since_reset = ops_until_fin_d.iloc[last_reset_pos + 1:]
 
     # Nominales al inicio (ops ESTRICTAMENTE antes de fecha_inicio → sin doble conteo)
     nom_inicio = 0
