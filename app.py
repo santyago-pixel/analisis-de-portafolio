@@ -1189,12 +1189,15 @@ def main():
         ops_cash = operaciones.copy()
         ops_cash['Fecha'] = pd.to_datetime(ops_cash['Fecha'], errors='coerce')
 
-        # Detectar nombres de columnas de cash (tolerante a variaciones)
-        cols_ops = ops_cash.columns.tolist()
-        col_saldo   = next((c for c in cols_ops if 'invertido' in c.lower() or 'saldo' in c.lower()), None)
-        col_dep     = next((c for c in cols_ops if 'deposit' in c.lower()), None)
-        col_ret     = next((c for c in cols_ops if 'retiro' in c.lower()), None)
-        has_cash    = col_saldo and col_dep and col_ret
+        # Detectar nombres de columnas de cash (tolerante a espacios y mayúsculas)
+        cols_ops  = ops_cash.columns.tolist()
+        col_saldo = next((c for c in cols_ops if 'invertido' in c.strip().lower() or
+                          ('saldo' in c.strip().lower() and 'ars' not in c.strip().lower())), None)
+        col_dep   = next((c for c in cols_ops if 'deposit' in c.strip().lower()), None)
+        col_ret   = next((c for c in cols_ops if 'retiro' in c.strip().lower()), None)
+        has_cash  = bool(col_saldo and col_dep and col_ret)
+        if not has_cash:
+            st.caption(f"🔍 debug cols: {[c for c in cols_ops if pd.notna(c) and str(c).strip()]}")
 
         def _get_saldo_at(df, fecha, col):
             rows = df[df['Fecha'] <= pd.to_datetime(fecha)][col].dropna()
