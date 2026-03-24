@@ -1064,11 +1064,19 @@ def main():
     # SECCIÓN 1 – COMPOSICIÓN ACTUAL
     # Título y toggle de moneda en la misma fila
     # ══════════════════════════════════════════
-    col_s1, _, col_mon = st.columns([5, 1, 1])
+    col_s1, _, col_vista, col_mon = st.columns([4, 1, 2, 1])
     with col_s1:
         _section_header(
             "Composición Actual de la Cartera",
             f"Calculado al {fecha_actual.strftime('%d/%m/%Y')} — valores en {lbl_moneda}"
+        )
+    with col_vista:
+        st.markdown('<div style="height:2.1rem;"></div>', unsafe_allow_html=True)
+        st.radio(
+            'Vista', ['Excel Propio', 'Resumen'],
+            horizontal=True,
+            key='vista_sel',
+            label_visibility='collapsed'
         )
     with col_mon:
         # Espaciador para alinear verticalmente el radio con el título
