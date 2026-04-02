@@ -334,6 +334,98 @@ def load_data(filename='operaciones.xlsx'):
 
 
 # ─────────────────────────────────────────────
+# Carga modo Resumen (port dummy.xlsx)
+# ─────────────────────────────────────────────
+def load_data_resumen(filename='port dummy.xlsx'):
+    """
+    Carga datos del formato 'port dummy.xlsx' (modo Resumen).
+
+    Hoja Trades (header en fila 1, fila 0 vacía):
+      A=Asset, B=Date, C=Kind, D=Trade, E=Asset Class, F=Currency,
+      G=Sector, H=Type, I=Law, J=Settlement, K=AcBivo (Activo),
+      L=Nominal, M=Price, N=%Amort, O=Monto Amt/Cpn/Div, P=Value
+
+    Mapeo a operaciones_mapped:
+      Fecha      ← B (Date)
+      Tipo       ← D (Trade: Compra/Venta/…)
+      Activo     ← A (Asset)
+      Cantidad   ← L (Nominal)
+      Precio ARS ← M (Price)   — precios en ARS
+      Monto ARS  ← P (Value)   — montos en ARS
+      Precio/Monto USD ← NaN   (no disponible)
+
+    Hoja Precios: mismo formato que operaciones.xlsx (fila 0 = tickers, filas 1+ = fecha+precios).
+    Los precios se almacenan como 'Precio' (en ARS). fx_rates se fija a 1.0 para que
+    los cálculos en modo ARS devuelvan el precio directamente.
+    """
+    try:
+        # ── Trades ───────────────────────────────────────────────────────────
+        trades_raw = pd.read_excel(filename, sheet_name='Trades', header=1)
+
+        operaciones_mapped = pd.DataFrame()
+        operaciones_mapped['Fecha']      = pd.to_datetime(trades_raw['Date'], errors='coerce')
+        operaciones_mapped['Tipo']       = trades_raw['Trade'].astype(str).str.strip().str.title()
+        operaciones_mapped['Activo']     = trades_raw['Asset'].astype(str).str.strip()
+        operaciones_mapped['Cantidad']   = pd.to_numeric(trades_raw['Nominal'], errors='coerce')
+        operaciones_mapped['Precio']     = np.nan
+        operaciones_mapped['Monto']      = np.nan
+        operaciones_mapped['Precio ARS'] = pd.to_numeric(trades_raw['Price'], errors='coerce')
+        operaciones_mapped['Monto ARS']  = pd.to_numeric(trades_raw['Value'], errors='coerce')
+
+        # Filtrar filas sin fecha o activo válido
+        operaciones_mapped = operaciones_mapped[
+            operaciones_mapped['Fecha'].notna() &
+            operaciones_mapped['Activo'].notna() &
+            (operaciones_mapped['Activo'] != 'nan')
+        ].reset_index(drop=True)
+
+        # ── Precios ───────────────────────────────────────────────────────────
+        precios_raw = pd.read_excel(filename, sheet_name='Precios', header=None)
+
+        # Fila 0 = tickers; renombrar columnas
+        tickers = precios_raw.iloc[0].tolist()
+        precios_raw.columns = tickers
+        precios_raw = precios_raw.iloc[1:].reset_index(drop=True)
+        fecha_col = tickers[0]
+        precios_raw = precios_raw.rename(columns={fecha_col: 'Fecha'})
+        precios_raw['Fecha'] = pd.to_datetime(precios_raw['Fecha'], errors='coerce')
+        precios_raw = precios_raw.dropna(subset=['Fecha'])
+
+        # Live prices = última fila disponible
+        last_row  = precios_raw.iloc[-1]
+        live_prices = {}
+        for col in precios_raw.columns[1:]:
+            if pd.notna(col) and str(col).strip() not in ('', 'nan'):
+                val = last_row.get(col, np.nan)
+                if pd.notna(val):
+                    live_prices[str(col).strip()] = float(val)
+
+        # Precios en formato largo (precios en ARS almacenados como 'Precio')
+        precios_long = precios_raw.melt(
+            id_vars=['Fecha'], var_name='Activo', value_name='Precio'
+        ).dropna(subset=['Precio'])
+        precios_long['Activo'] = precios_long['Activo'].astype(str).str.strip()
+        precios_long = precios_long[precios_long['Activo'] != 'nan'].reset_index(drop=True)
+
+        # fx_rates = 1.0 en todas las fechas (precios ya en ARS, sin conversión)
+        fx_rates = pd.DataFrame({
+            'Fecha': precios_raw['Fecha'],
+            'ARS':   1.0
+        })
+
+        live_fx = 1.0
+
+        return operaciones_mapped, precios_long, fx_rates, live_prices, live_fx
+
+    except FileNotFoundError:
+        st.error(f"No se encontró '{filename}'. Asegurate de que esté en la carpeta del proyecto.")
+        return None, None, None, {}, None
+    except Exception as e:
+        st.error(f"Error al cargar Resumen: {e}")
+        return None, None, None, {}, None
+
+
+# ─────────────────────────────────────────────
 # Helpers de moneda
 # ─────────────────────────────────────────────
 def _get_fx(fx_rates, fecha):
@@ -1018,24 +1110,31 @@ def main():
         with open(filename, 'wb') as f:
             f.write(st.session_state.upload_bytes)
 
-    # ── Moneda desde sesión (disponible antes del widget, que se renderiza luego) ─
-    moneda = st.session_state.get('moneda_sel', 'USD')
+    # ── Vista seleccionada ─────────────────────────────────────────────────────
+    vista = st.session_state.get('vista_sel', 'Excel Propio')
+
+    # ── Moneda desde sesión ────────────────────────────────────────────────────
+    # En modo Resumen las ops son en ARS; se fuerza ARS independientemente del toggle.
+    moneda = 'ARS' if vista == 'Resumen' else st.session_state.get('moneda_sel', 'USD')
 
     # ── Fecha actual fija = hoy (se muestra en hero card, sin input) ───────────
     fecha_actual = datetime.now().date()
 
-    # ── Carga de datos ─────────────────────────────────────────────────────────
-    operaciones, precios, fx_rates, live_prices, live_fx = load_data(filename)
+    # ── Carga de datos según vista ─────────────────────────────────────────────
+    if vista == 'Resumen':
+        operaciones, precios, fx_rates, live_prices, live_fx = load_data_resumen('port dummy.xlsx')
+    else:
+        operaciones, precios, fx_rates, live_prices, live_fx = load_data(filename)
 
     if operaciones is None or precios is None:
         st.error(
             "Error al cargar los datos. "
-            "Verifica que el archivo 'operaciones.xlsx' esté en la carpeta del proyecto."
+            "Verifica que el archivo esté en la carpeta del proyecto."
         )
         return
 
-    # Validar ARS
-    if moneda == 'ARS' and (fx_rates is None or fx_rates.empty):
+    # Validar ARS (solo en modo Excel Propio; Resumen siempre es ARS con fx=1.0)
+    if vista != 'Resumen' and moneda == 'ARS' and (fx_rates is None or fx_rates.empty):
         st.warning(
             "⚠️ Modo ARS: no se encontró columna 'ARS' en Precios. "
             "Se muestran valores en USD."
