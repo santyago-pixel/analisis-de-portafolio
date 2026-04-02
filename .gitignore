@@ -46,6 +46,7 @@ data/privado/
 *.xlsx
 !operaciones.xlsx
 !data/ejemplo_cartera.xlsx
+!port dummy.xlsx
 
 # IDEs
 .vscode/
