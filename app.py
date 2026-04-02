@@ -382,30 +382,43 @@ def load_data_resumen(filename='port dummy.xlsx'):
         # ── Precios ───────────────────────────────────────────────────────────
         precios_raw = pd.read_excel(filename, sheet_name='Precios', header=None)
 
-        # Fila 0 = tickers; renombrar columnas
-        tickers = precios_raw.iloc[0].tolist()
-        precios_raw.columns = tickers
-        precios_raw = precios_raw.iloc[1:].reset_index(drop=True)
-        fecha_col = tickers[0]
-        precios_raw = precios_raw.rename(columns={fecha_col: 'Fecha'})
-        precios_raw['Fecha'] = pd.to_datetime(precios_raw['Fecha'], errors='coerce')
-        precios_raw = precios_raw.dropna(subset=['Fecha'])
+        # Fila 0 = tickers (pueden tener espacios o ser NaN); fila 1+ = fecha + precios
+        tickers_raw = precios_raw.iloc[0].tolist()
+
+        # Construir DataFrame limpio col por col para evitar duplicados de NaN
+        fecha_series = pd.to_datetime(precios_raw.iloc[1:, 0], errors='coerce')
+        precios_limpio = pd.DataFrame({'Fecha': fecha_series.values})
+
+        asset_cols = {}  # ticker_limpio → índice de columna
+        for i, t in enumerate(tickers_raw[1:], start=1):
+            if pd.isna(t):
+                continue
+            ticker = str(t).strip()
+            if not ticker or ticker == 'nan':
+                continue
+            # En caso de ticker duplicado (raro), conservar la primera aparición
+            if ticker not in asset_cols:
+                asset_cols[ticker] = i
+
+        for ticker, col_idx in asset_cols.items():
+            precios_limpio[ticker] = pd.to_numeric(
+                precios_raw.iloc[1:, col_idx].values, errors='coerce'
+            )
+
+        precios_limpio = precios_limpio.dropna(subset=['Fecha']).reset_index(drop=True)
 
         # Live prices = última fila disponible
-        last_row  = precios_raw.iloc[-1]
-        live_prices = {}
-        for col in precios_raw.columns[1:]:
-            if pd.notna(col) and str(col).strip() not in ('', 'nan'):
-                val = last_row.get(col, np.nan)
-                if pd.notna(val):
-                    live_prices[str(col).strip()] = float(val)
+        last_row = precios_limpio.iloc[-1]
+        live_prices = {
+            t: float(last_row[t])
+            for t in asset_cols
+            if t in precios_limpio.columns and pd.notna(last_row.get(t))
+        }
 
         # Precios en formato largo (precios en ARS almacenados como 'Precio')
-        precios_long = precios_raw.melt(
+        precios_long = precios_limpio.melt(
             id_vars=['Fecha'], var_name='Activo', value_name='Precio'
-        ).dropna(subset=['Precio'])
-        precios_long['Activo'] = precios_long['Activo'].astype(str).str.strip()
-        precios_long = precios_long[precios_long['Activo'] != 'nan'].reset_index(drop=True)
+        ).dropna(subset=['Precio']).reset_index(drop=True)
 
         # fx_rates = 1.0 en todas las fechas (precios ya en ARS, sin conversión)
         fx_rates = pd.DataFrame({
