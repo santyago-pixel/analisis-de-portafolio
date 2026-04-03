@@ -1431,7 +1431,6 @@ def main():
             )
         else:
             cash_inicio = cash_fin = flujos_netos = 0.0
-            st.caption("ℹ️ Sin columnas de cash (Deposito / Retiro) en el Excel — valores de cash en $0.")
 
         titulos_inicio      = evolution_df['Valor al Inicio'].sum()
         titulos_fin         = evolution_df['Valor Actual'].sum()
@@ -1532,19 +1531,28 @@ def main():
                 r = cash_sdf_g[cash_sdf_g.index <= d]
                 return float(r.iloc[-1]['Cash']) if not r.empty else 0.0
 
-            # Step function: neto invertido (depósitos − retiros)
+            # Step function: neto invertido
+            # Si hay columnas de depósito/retiro: depósitos − retiros acumulados.
+            # Si no (modo Resumen): costo acumulado de compras − ventas (Monto ARS).
             ni_cum_g = 0.0
             ni_steps_g = []
             for _, row in ops_sorted_g.iterrows():
                 d = row['Fecha']
-                if not has_cash or pd.isna(d):
+                if pd.isna(d):
                     continue
-                dep = float(row[col_dep]) if pd.notna(row.get(col_dep, np.nan)) else 0.0
-                ret = float(row[col_ret]) if pd.notna(row.get(col_ret, np.nan)) else 0.0
-                if dep != 0 or ret != 0:
-                    fx = _get_fx(fx_rates, d) if moneda == 'ARS' else 1.0
-                    ni_cum_g += (dep - ret) * fx
-                    ni_steps_g.append((d, ni_cum_g))
+                if has_cash:
+                    dep = float(row[col_dep]) if pd.notna(row.get(col_dep, np.nan)) else 0.0
+                    ret = float(row[col_ret]) if pd.notna(row.get(col_ret, np.nan)) else 0.0
+                    if dep != 0 or ret != 0:
+                        fx = _get_fx(fx_rates, d) if moneda == 'ARS' else 1.0
+                        ni_cum_g += (dep - ret) * fx
+                        ni_steps_g.append((d, ni_cum_g))
+                else:
+                    tipo = str(row.get('Tipo', '')).strip()
+                    if tipo in ('Compra', 'Venta'):
+                        monto = _get_monto(row, moneda, fx_rates)
+                        ni_cum_g += monto if tipo == 'Compra' else -monto
+                        ni_steps_g.append((d, ni_cum_g))
 
             ni_sdf_g = (pd.DataFrame(ni_steps_g, columns=['Fecha', 'NI'])
                           .set_index('Fecha').groupby(level=0).last()
