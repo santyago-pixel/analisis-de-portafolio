@@ -1036,13 +1036,6 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo,
         st.markdown(f"**Operaciones detalladas para {activo}:**")
         _render_df(display, left_cols=('Fecha', 'Operación'))
 
-        csv_detalle = detalle_df.to_csv(index=False)
-        st.download_button(
-            label=f"📥 Descargar CSV - {activo}",
-            data=csv_detalle,
-            file_name=f"detalle_{activo}_{fecha_inicio.strftime('%Y%m%d')}_{fecha_fin.strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-        )
     else:
         st.info(f"No hay operaciones para {activo} en el período seleccionado.")
 
@@ -1307,13 +1300,6 @@ def main():
             "ℹ️ Amortizaciones, Cupones y Dividendos corresponden únicamente a los flujos "
             "cobrados desde la apertura de la posición actual. Los flujos de posiciones "
             "anteriores del mismo activo (antes del último reset) se reflejan en la Sección 2."
-        )
-        csv = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].to_csv(index=False)
-        st.download_button(
-            label="📥 Descargar CSV",
-            data=csv,
-            file_name=f"composicion_cartera_{fecha_actual.strftime('%Y%m%d')}_{lbl_moneda}.csv",
-            mime="text/csv",
         )
 
     # ══════════════════════════════════════════
@@ -1607,6 +1593,7 @@ def main():
             ni_steps_g = True  # siempre mostrar ambas líneas
 
             df_chart = pd.DataFrame(chart_rows_g)
+            df_chart['Ganancia'] = df_chart['Valor Total'] - df_chart['Valor al Inicio']
             lbl_y = 'ARS' if moneda == 'ARS' else 'USD'
 
             fig = go.Figure()
@@ -1615,19 +1602,28 @@ def main():
                 fill='tozeroy', name='Valor al Inicio',
                 mode='lines', line=dict(color='#93C5FD', width=1.5),
                 fillcolor='rgba(147, 197, 253, 0.25)',
+                yaxis='y1',
             ))
             fig.add_trace(go.Scatter(
                 x=df_chart['Fecha'], y=df_chart['Valor Total'],
                 name='Valor Total',
                 mode='lines', line=dict(color='#1A4B9B', width=2.5),
+                yaxis='y1',
+            ))
+            fig.add_trace(go.Scatter(
+                x=df_chart['Fecha'], y=df_chart['Ganancia'],
+                name='Ganancia Acumulada',
+                mode='lines', line=dict(color='#10B981', width=1.5, dash='dot'),
+                yaxis='y2',
             ))
             fig.update_layout(
                 hovermode='x unified',
                 xaxis_title=None,
-                yaxis_title=lbl_y,
+                yaxis=dict(title=lbl_y, side='left'),
+                yaxis2=dict(title=f'Ganancia ({lbl_y})', side='right', overlaying='y', showgrid=False),
                 legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
-                height=320,
-                margin=dict(l=0, r=10, t=30, b=0),
+                height=340,
+                margin=dict(l=0, r=60, t=30, b=0),
                 plot_bgcolor='#F0F2F6',
                 paper_bgcolor='rgba(0,0,0,0)',
             )
@@ -1636,13 +1632,6 @@ def main():
         except Exception as e:
             st.caption(f"⚠️ No se pudo generar el gráfico: {e}")
 
-        csv_evo = evolution_df.to_csv(index=False)
-        st.download_button(
-            label="📥 Descargar CSV Evolución",
-            data=csv_evo,
-            file_name=f"evolucion_cartera_{fecha_inicio.strftime('%Y%m%d')}_{fecha_fin.strftime('%Y%m%d')}_{lbl_moneda}.csv",
-            mime="text/csv",
-        )
 
     # ── Detalle por activo ─────────────────────────────────────────────────────
     if not evolution_df.empty:
