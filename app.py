@@ -1379,10 +1379,14 @@ def main():
             tot_ven  = evo_disp['Ventas'].sum()
             tot_acd  = evo_disp['Amort / Cup / Div'].sum()
             tot_gan  = evo_disp['Ganancia Total'].sum()
+            tot_neto = tot_comp - tot_ven
+
+            # Fusionar Compras y Ventas en columna Neto (antes de formatear)
+            evo_disp['Neto'] = evo_disp['Compras'] - evo_disp['Ventas']
 
             evo_disp['Nominales'] = evo_disp['Nominales'].apply(_fmt_number)
             for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
-                        'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
+                        'Neto', 'Amort / Cup / Div', 'Ganancia Total']:
                 if col == 'Precio Actual':
                     evo_disp[col] = evo_disp[col].apply(lambda x: _fmt_price(x, moneda))
                 else:
@@ -1391,23 +1395,23 @@ def main():
             if with_diffs:
                 evo_disp['Dif. Diaria']  = evo_disp['Dif. Diaria'].apply(_fmt_diff)
                 evo_disp['Dif. Mensual'] = evo_disp['Dif. Mensual'].apply(_fmt_diff)
-                final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
+                final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Neto',
                               'Amort / Cup / Div', 'Precio Actual', 'Valor Actual',
                               'Dif. Diaria', 'Dif. Mensual', 'Ganancia Total']
                 total_row = pd.DataFrame([{
                     'Activo': 'TOTAL', 'Nominales': '-', 'Valor al Inicio': _fmt_money(tot_vi, moneda),
-                    'Compras': _fmt_money(tot_comp, moneda), 'Ventas': _fmt_money(tot_ven, moneda),
+                    'Neto': _fmt_money(tot_neto, moneda),
                     'Amort / Cup / Div': _fmt_money(tot_acd, moneda), 'Precio Actual': '-',
                     'Valor Actual': _fmt_money(tot_val, moneda),
                     'Dif. Diaria': _fmt_diff(tot_dif_dia), 'Dif. Mensual': _fmt_diff(tot_dif_mes),
                     'Ganancia Total': _fmt_money(tot_gan, moneda),
                 }])
             else:
-                final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
+                final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Neto',
                               'Amort / Cup / Div', 'Precio Actual', 'Valor Actual', 'Ganancia Total']
                 total_row = pd.DataFrame([{
                     'Activo': 'TOTAL', 'Nominales': '-', 'Valor al Inicio': _fmt_money(tot_vi, moneda),
-                    'Compras': _fmt_money(tot_comp, moneda), 'Ventas': _fmt_money(tot_ven, moneda),
+                    'Neto': _fmt_money(tot_neto, moneda),
                     'Amort / Cup / Div': _fmt_money(tot_acd, moneda), 'Precio Actual': '-',
                     'Valor Actual': _fmt_money(tot_val, moneda),
                     'Ganancia Total': _fmt_money(tot_gan, moneda),
@@ -1416,9 +1420,9 @@ def main():
             evo_disp = pd.concat([evo_disp[final_cols], total_row], ignore_index=True)
             _render_df(evo_disp)
 
-        # ── Análisis Mensual (fechas fijas: 1° del mes → hoy) ─────────────────
+        # ── Análisis Mensual (fechas fijas: último día mes anterior → hoy) ──────
         hoy_t2        = datetime.now().date()
-        inicio_mes_t2 = hoy_t2.replace(day=1)
+        inicio_mes_t2 = hoy_t2.replace(day=1) - timedelta(days=1)   # último día del mes anterior
         _section_header("Análisis Mensual",
                          f"{inicio_mes_t2.strftime('%d/%m/%Y')} — {hoy_t2.strftime('%d/%m/%Y')}")
         evo_mes = calculate_portfolio_evolution(
