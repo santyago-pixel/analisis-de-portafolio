@@ -911,12 +911,17 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         ventas_en_periodo  = sales_fin  - sales_inicio
         ganancia_total     = (valor_fin - valor_inicio - compras_en_periodo) + div_cup_en_periodo + ventas_en_periodo
 
+        # Para activos comprados dentro del período (nom_inicio = 0), mostrar el costo
+        # de compra como "Valor al Inicio" en lugar de 0. La ganancia se calcula igual
+        # porque internamente valor_inicio = 0 para esos activos.
+        valor_inicio_display = valor_inicio if nom_inicio > 0 else compras_en_periodo
+
         evolution_data.append({
             'Activo':            asset,
             'Nominales':         nom_fin,
             'Precio Actual':     precio_fin,
             'Valor Actual':      valor_fin,
-            'Valor al Inicio':   valor_inicio,
+            'Valor al Inicio':   valor_inicio_display,
             'Compras':           compras_en_periodo,
             'Ventas':            ventas_en_periodo,
             'Amort / Cup / Div': div_cup_en_periodo,
@@ -1397,14 +1402,13 @@ def main():
                 evo_disp['Dif. Mensual'] = evo_disp['Dif. Mensual'].apply(_fmt_diff)
                 final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Neto',
                               'Amort / Cup / Div', 'Precio Actual', 'Valor Actual',
-                              'Dif. Diaria', 'Dif. Mensual', 'Ganancia Total']
+                              'Dif. Diaria', 'Dif. Mensual']
                 total_row = pd.DataFrame([{
                     'Activo': 'TOTAL', 'Nominales': '-', 'Valor al Inicio': _fmt_money(tot_vi, moneda),
                     'Neto': _fmt_money(tot_neto, moneda),
                     'Amort / Cup / Div': _fmt_money(tot_acd, moneda), 'Precio Actual': '-',
                     'Valor Actual': _fmt_money(tot_val, moneda),
                     'Dif. Diaria': _fmt_diff(tot_dif_dia), 'Dif. Mensual': _fmt_diff(tot_dif_mes),
-                    'Ganancia Total': _fmt_money(tot_gan, moneda),
                 }])
             else:
                 final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Neto',
