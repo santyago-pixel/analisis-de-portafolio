@@ -400,16 +400,34 @@ def load_data_resumen(filename='port dummy.xlsx'):
                 asset_cols[ticker] = i
 
         # Construir precios_long fila a fila (evita melt con columnas duplicadas/NaN)
-        date_col = pd.to_datetime(precios_raw.iloc[1:, 0], errors='coerce').reset_index(drop=True)
-        last_valid_i = date_col.last_valid_index()  # último índice con fecha válida
+        # Las filas de datos van desde la fila 1 del raw (fila 0 son tickers)
+        raw_date_vals = precios_raw.iloc[1:, 0].reset_index(drop=True)  # valores sin parsear
         precios_rows = []
         live_prices  = {}
+        fechas_validas = []
 
-        for row_i, fecha in enumerate(date_col):
+        for row_i, raw_val in enumerate(raw_date_vals):
+            raw_str = str(raw_val).strip() if pd.notna(raw_val) else ''
+
+            # Detectar fila "Precio Actual" → live prices (no histórico)
+            if raw_str.lower() == 'precio actual':
+                raw_row = precios_raw.iloc[row_i + 1]  # +1 porque fila 0 son tickers
+                for ticker, col_idx in asset_cols.items():
+                    try:
+                        val = float(raw_row.iloc[col_idx])
+                    except (TypeError, ValueError):
+                        continue
+                    if not np.isnan(val):
+                        live_prices[ticker] = val
+                continue  # no agregar al histórico
+
+            # Intentar parsear como fecha
+            fecha = pd.to_datetime(raw_val, errors='coerce')
             if pd.isna(fecha):
                 continue
-            raw_row = precios_raw.iloc[row_i + 1]  # +1 porque fila 0 es header
-            is_last = (row_i == last_valid_i)
+
+            fechas_validas.append(fecha)
+            raw_row = precios_raw.iloc[row_i + 1]  # +1 porque fila 0 son tickers
             for ticker, col_idx in asset_cols.items():
                 try:
                     val = float(raw_row.iloc[col_idx])
@@ -418,8 +436,6 @@ def load_data_resumen(filename='port dummy.xlsx'):
                 if np.isnan(val):
                     continue
                 precios_rows.append({'Fecha': fecha, 'Activo': ticker, 'Precio': val})
-                if is_last:
-                    live_prices[ticker] = val
 
         precios_long = (
             pd.DataFrame(precios_rows)
@@ -428,7 +444,6 @@ def load_data_resumen(filename='port dummy.xlsx'):
         )
 
         # fx_rates = 1.0 en todas las fechas (precios ya en ARS, sin conversión)
-        fechas_validas = date_col.dropna().values
         fx_rates = pd.DataFrame({'Fecha': fechas_validas, 'ARS': 1.0})
 
         live_fx = 1.0
@@ -463,16 +478,21 @@ def _get_monto(op, moneda, fx_rates):
     """Devuelve el monto de una operación en la moneda seleccionada.
 
     En ARS: usa Monto ARS (TC efectivo al momento de la operación).
-    Fallback: si Monto ARS es NaN, convierte Monto USD × TC de cierre del día.
+    Fallback: si Monto ARS es NaN/0, convierte Monto USD × TC de cierre del día.
+    Si ambos son NaN/0 (modo Resumen sin Value), retorna 0.0 en lugar de NaN.
     """
     if moneda == 'ARS':
         monto_ars = op.get('Monto ARS', np.nan)
         if pd.notna(monto_ars) and monto_ars != 0:
             return float(monto_ars)
         # Fallback: TC de cierre como aproximación
+        monto_usd = op.get('Monto', np.nan)
+        if pd.isna(monto_usd):
+            return 0.0  # modo Resumen sin Value disponible
         fx = _get_fx(fx_rates, op['Fecha'])
-        return float(op['Monto']) * fx
-    return float(op['Monto'])
+        return float(monto_usd) * fx
+    monto_usd = op.get('Monto', np.nan)
+    return float(monto_usd) if pd.notna(monto_usd) else 0.0
 
 
 def _get_precio_op(op, moneda, fx_rates):
