@@ -1424,14 +1424,15 @@ def main():
         pct_cash            = (ganancia_cash / base_cash * 100) if base_cash > 0 else 0
         pct_str_cash        = f"({'▼' if pct_cash < 0 else '▲'} {abs(pct_cash):.1f}%)"
 
-        summary_cash = pd.DataFrame([{
-            'Valor Inicial (tít+cash)': _fmt_money(valor_inicial_total, moneda),
-            'Flujos Netos':             _fmt_money(flujos_netos, moneda),
-            'Valor Final Títulos':      _fmt_money(titulos_fin, moneda),
-            'Valor Final Cash':         _fmt_money(cash_fin, moneda),
-            'Ganancia Total':           f"{_fmt_money(ganancia_cash, moneda)} {pct_str_cash}",
-        }])
-        st.dataframe(summary_cash, use_container_width=True, hide_index=True)
+        if vista != 'Resumen':
+            summary_cash = pd.DataFrame([{
+                'Valor Inicial (tít+cash)': _fmt_money(valor_inicial_total, moneda),
+                'Flujos Netos':             _fmt_money(flujos_netos, moneda),
+                'Valor Final Títulos':      _fmt_money(titulos_fin, moneda),
+                'Valor Final Cash':         _fmt_money(cash_fin, moneda),
+                'Ganancia Total':           f"{_fmt_money(ganancia_cash, moneda)} {pct_str_cash}",
+            }])
+            st.dataframe(summary_cash, use_container_width=True, hide_index=True)
 
         # ── Gráfico: Valor Total vs. Neto Invertido ───────────────────────────
         try:
@@ -1538,6 +1539,7 @@ def main():
             assets_g = [a for a in ops_cash['Activo'].dropna().unique() if pd.notna(a)]
             chart_rows_g = []
             for d in chart_dates_g:
+                d = pd.Timestamp(d)  # normalizar tipo para comparaciones seguras
                 bv = 0.0
                 for asset in assets_g:
                     h = _h_at(asset, d)
