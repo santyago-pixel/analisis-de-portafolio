@@ -1200,476 +1200,468 @@ def main():
     )
 
     # ══════════════════════════════════════════
-    # SECCIÓN 1 – COMPOSICIÓN ACTUAL
+    # PESTAÑAS
     # ══════════════════════════════════════════
-    _section_header(
-        "Composición Actual de la Cartera",
-        f"Calculado al {fecha_actual.strftime('%d/%m/%Y')} — valores en ARS (millones)"
-    )
+    tab1, tab2, tab3 = st.tabs([
+        "Composición Actual",
+        "Evolución de la Cartera",
+        "Análisis por Activo",
+    ])
 
-    portfolio_df = calculate_current_portfolio(
-        operaciones, precios, fecha_actual, moneda=moneda, fx_rates=fx_rates,
-        live_prices=live_prices, live_fx=live_fx
-    )
-
-    if portfolio_df.empty:
-        st.warning("No hay activos con nominales positivos en la fecha seleccionada.")
-    else:
-        total_valor_mercado = portfolio_df['_Valor Actual'].sum()
-        total_costo         = portfolio_df['Costo'].sum()
-        total_amort         = portfolio_df['Amortizaciones'].sum()
-        total_cup           = portfolio_df['Cupones'].sum()
-        total_div           = portfolio_df['Dividendos'].sum()
-        total_ganancia_r    = total_amort + total_cup + total_div
-        total_ganancia_no_r = portfolio_df['Ganancias no Realizadas'].sum()
-        pct_no_r            = (total_ganancia_no_r / total_costo * 100) if total_costo > 0 else 0
-
-        total_ganancia = total_ganancia_r + total_ganancia_no_r
-        pct_total      = (total_ganancia / total_costo * 100) if total_costo > 0 else 0
-        pct_str        = f"{'▼' if pct_total < 0 else '▲'} {abs(pct_total):.1f}%"
-        c1, c2, c3, c4 = st.columns(4)
-        with c1: _metric("Valor de Mercado",  _fmt_money(total_valor_mercado, moneda))
-        with c2: _metric("Costo Total",        _fmt_money(total_costo, moneda))
-        with c3: _metric("Amort / Cup / Div",  _fmt_money(total_amort + total_cup + total_div, moneda))
-        with c4: _metric("Ganancia Total",      _fmt_money(total_ganancia, moneda), sub_str=pct_str)
-        st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
-
-        # ── Diferencia diaria y mensual por activo (en valor, no %) ──────────
-        precios_hist = precios.copy()
-        precios_hist['Fecha'] = pd.to_datetime(precios_hist['Fecha'])
-        hoy = pd.Timestamp(fecha_actual)
-        inicio_mes = hoy.replace(day=1)
-
-        def _diff_diaria(asset, nom):
-            ap = precios_hist[precios_hist['Activo'] == asset].sort_values('Fecha')
-            r_hoy = ap[ap['Fecha'] <= hoy]
-            if r_hoy.empty:
-                return np.nan
-            p_hoy = float(r_hoy.iloc[-1]['Precio'])
-            fecha_hoy_precio = r_hoy.iloc[-1]['Fecha']
-            r_prev = ap[ap['Fecha'] < fecha_hoy_precio]
-            if r_prev.empty:
-                return np.nan
-            p_prev = float(r_prev.iloc[-1]['Precio'])
-            return (p_hoy - p_prev) * nom
-
-        def _diff_mensual(asset, nom):
-            ap = precios_hist[precios_hist['Activo'] == asset].sort_values('Fecha')
-            r_hoy = ap[ap['Fecha'] <= hoy]
-            if r_hoy.empty:
-                return np.nan
-            p_hoy = float(r_hoy.iloc[-1]['Precio'])
-            r_mes = ap[ap['Fecha'] < inicio_mes]
-            if r_mes.empty:
-                return np.nan
-            p_mes = float(r_mes.iloc[-1]['Precio'])
-            return (p_hoy - p_mes) * nom
-
-        def _fmt_diff(x):
-            if not pd.notna(x) or x == 0:
-                return '-'
-            arrow = '▼' if x < 0 else '▲'
-            return f"{arrow} {_fmt_money(abs(x), moneda)}"
-
-        cols_display = [
-            'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
-            'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
-        ]
-        display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display] \
-                         .sort_values('Nominales', ascending=False).reset_index(drop=True).copy()
-
-        # Unificar Amortizaciones + Cupones + Dividendos
-        display_df['Amort / Cup / Div'] = display_df['Amortizaciones'] + display_df['Cupones'] + display_df['Dividendos']
-
-        # Diferencia en valor = (precio_hoy - precio_ref) × nominales
-        nom_raw = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'}) \
-                      .sort_values('Nominales', ascending=False).reset_index(drop=True)['Nominales']
-        display_df['_nom'] = nom_raw.values
-        display_df['Dif. Diaria'] = display_df.apply(lambda r: _diff_diaria(r['Activo'], r['_nom']), axis=1)
-        display_df['Dif. Mensual'] = display_df.apply(lambda r: _diff_mensual(r['Activo'], r['_nom']), axis=1)
-
-        # Totales (numéricos antes de formatear)
-        tot_valor_actual    = display_df['Valor Actual'].sum()
-        tot_costo           = display_df['Costo'].sum()
-        tot_amort           = display_df['Amort / Cup / Div'].sum()
-        tot_dif_dia         = display_df['Dif. Diaria'].sum()
-        tot_dif_mes         = display_df['Dif. Mensual'].sum()
-        tot_ganancia        = display_df['Ganancia Total'].sum()
-
-        # Formatear columnas
-        display_df['Nominales']         = display_df['Nominales'].apply(_fmt_number)
-        display_df['Precio Actual']     = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
-        display_df['Valor Actual']      = display_df['Valor Actual'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Costo']             = display_df['Costo'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Amort / Cup / Div'] = display_df['Amort / Cup / Div'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Ganancia Total']    = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Dif. Diaria']       = display_df['Dif. Diaria'].apply(_fmt_diff)
-        display_df['Dif. Mensual']      = display_df['Dif. Mensual'].apply(_fmt_diff)
-
-        final_cols = ['Activo', 'Nominales', 'Precio Actual', 'Valor Actual',
-                      'Costo', 'Amort / Cup / Div', 'Dif. Diaria', 'Dif. Mensual', 'Ganancia Total']
-        display_df = display_df[final_cols]
-
-        # Fila total
-        total_row = pd.DataFrame([{
-            'Activo':           'TOTAL',
-            'Nominales':        '-',
-            'Precio Actual':    '-',
-            'Valor Actual':     _fmt_money(tot_valor_actual, moneda),
-            'Costo':            _fmt_money(tot_costo, moneda),
-            'Amort / Cup / Div':_fmt_money(tot_amort, moneda),
-            'Dif. Diaria':      _fmt_diff(tot_dif_dia),
-            'Dif. Mensual':     _fmt_diff(tot_dif_mes),
-            'Ganancia Total':   _fmt_money(tot_ganancia, moneda),
-        }])
-        display_df = pd.concat([display_df, total_row], ignore_index=True)
-
-        _render_df(display_df)
-
-        if '_nota' in portfolio_df.columns:
-            for nota in portfolio_df[portfolio_df['_nota'] != '']['_nota']:
-                st.caption(nota)
-
-    # ══════════════════════════════════════════
-    # SECCIÓN 2 – EVOLUCIÓN HISTÓRICA
-    # Título y selector de fechas en la misma fila
-    # ══════════════════════════════════════════
-    col_s2, col_i, col_f = st.columns([4, 1, 1])
-    with col_s2:
-        st.markdown('<div style="border-left:4px solid #1A4B9B;padding-left:10px;margin:0.3rem 0 0.5rem;min-height:4.4rem;display:flex;align-items:flex-start;"><div style="font-size:1.2rem;font-weight:700;color:#1B2333;padding-top:0.1rem;">Análisis de la Evolución de la Cartera</div></div>', unsafe_allow_html=True)
-    with col_i:
-        fecha_inicio = st.date_input(
-            "Inicio",
-            value=datetime.now().date() - timedelta(days=365),
-            help="Fecha de inicio del período"
-        )
-    with col_f:
-        fecha_fin = st.date_input(
-            "Fin",
-            value=datetime.now().date(),
-            help="Fecha de fin del período"
+    with tab1:
+        portfolio_df = calculate_current_portfolio(
+            operaciones, precios, fecha_actual, moneda=moneda, fx_rates=fx_rates,
+            live_prices=live_prices, live_fx=live_fx
         )
 
-    # Me1: validar rango
-    if fecha_inicio > fecha_fin:
-        st.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
-        return
-
-    evolution_df = calculate_portfolio_evolution(
-        operaciones, precios, fecha_inicio, fecha_fin, moneda=moneda, fx_rates=fx_rates,
-        live_prices=live_prices, live_fx=live_fx
-    )
-
-    if evolution_df.empty:
-        st.warning("No hay datos de evolución para el rango de fechas seleccionado.")
-    else:
-        flujos     = evolution_df['Ventas'].sum() + evolution_df['Amort / Cup / Div'].sum()
-        total_gain = evolution_df['Ganancia Total'].sum()
-        base       = evolution_df['Valor al Inicio'].sum() + evolution_df['Compras'].sum()
-        pct_evo    = (total_gain / base * 100) if base > 0 else 0
-        pct_str2   = f"({'▼' if pct_evo < 0 else '▲'} {abs(pct_evo):.1f}%)"
-        e1, e2, e3, e4, e5 = st.columns(5)
-        with e1: _metric("Valor Total",      _fmt_money(evolution_df['Valor Actual'].sum(), moneda))
-        with e2: _metric("Valor al Inicio",  _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda))
-        with e3: _metric("Compras",          _fmt_money(evolution_df['Compras'].sum(), moneda))
-        with e4: _metric("Ventas + Flujos",  _fmt_money(flujos, moneda))
-        with e5: _metric("Ganancia Total",   _fmt_money(total_gain, moneda))
-        st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
-
-        evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True)[
-            ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
-             'Amort / Cup / Div', 'Precio Actual', 'Valor Actual', 'Ganancia Total']
-        ].copy()
-        evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
-        for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
-                    'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
-            if col == 'Precio Actual':
-                evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
-            else:
-                evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
-        _render_df(evo_display)
-
-        # ── Tabla cash: cross-check por efectivo real ────────────────────────────
-        # El "efectivo real" en una fecha = depósitos − retiros − compras + (ventas+amort+cup+div)
-        # acumulados hasta esa fecha. Esto garantiza que ganancia_cash == ganancia_bonds.
-        ops_cash = operaciones.copy()
-        ops_cash['Fecha'] = pd.to_datetime(ops_cash['Fecha'], errors='coerce')
-
-        cols_ops = ops_cash.columns.tolist()
-        col_dep  = next((c for c in cols_ops if 'deposit' in c.strip().lower()), None)
-        col_ret  = next((c for c in cols_ops if 'retiro'  in c.strip().lower()), None)
-        has_cash = bool(col_dep and col_ret)
-
-        def _actual_cash(df, fecha, strict_bond=False, strict_ext=False):
-            """Efectivo real acumulado.
-            strict_bond: usa < fecha para flujos de bonos (compras/ventas/amort/cup).
-            strict_ext:  usa < fecha para flujos externos (depósitos/retiros).
-            Para cash_inicio: strict_bond=True, strict_ext=False
-              → depósitos/retiros del día de inicio cuentan como capital inicial,
-                pero los bonos comprados ese día no (consistente con bond table).
-            """
-            total = 0.0
-            for _, row in df.iterrows():
-                fecha_row = row['Fecha']
-                if pd.isna(fecha_row):
-                    continue
-                fx  = _get_fx(fx_rates, fecha_row) if moneda == 'ARS' else 1.0
-                dep = row[col_dep] if col_dep and pd.notna(row.get(col_dep, np.nan)) else 0.0
-                ret = row[col_ret] if col_ret and pd.notna(row.get(col_ret, np.nan)) else 0.0
-                cut_ext  = fecha_row <  pd.to_datetime(fecha) if strict_ext  else fecha_row <= pd.to_datetime(fecha)
-                if cut_ext:
-                    total += (dep - ret) * fx
-                tipo = row.get('Tipo', np.nan)
-                if pd.notna(tipo):
-                    cut_bond = fecha_row < pd.to_datetime(fecha) if strict_bond else fecha_row <= pd.to_datetime(fecha)
-                    if cut_bond:
-                        monto = _get_monto(row, moneda, fx_rates)
-                        total += -monto if str(tipo).strip() == 'Compra' else monto
-            return total
-
-        if has_cash:
-            # cash_inicio: depósitos/retiros ≤ fecha_inicio (mismo día = capital inicial),
-            #              bonos < fecha_inicio (consistente con bond table).
-            cash_inicio = _actual_cash(ops_cash, fecha_inicio, strict_bond=True,  strict_ext=False)
-            cash_fin    = _actual_cash(ops_cash, fecha_fin,    strict_bond=False, strict_ext=False)
-            # Flujos externos ESTRICTAMENTE después de fecha_inicio (evita doble-contar
-            # depósitos del día de inicio que ya están en cash_inicio).
-            ops_flujos = ops_cash[
-                (ops_cash['Fecha'] >  pd.to_datetime(fecha_inicio)) &
-                (ops_cash['Fecha'] <= pd.to_datetime(fecha_fin))
-            ]
-            flujos_netos = sum(
-                ((row[col_dep] if pd.notna(row.get(col_dep, np.nan)) else 0.0) -
-                 (row[col_ret] if pd.notna(row.get(col_ret, np.nan)) else 0.0)) *
-                (_get_fx(fx_rates, row['Fecha']) if moneda == 'ARS' else 1.0)
-                for _, row in ops_flujos.iterrows()
-                if pd.notna(row.get(col_dep, np.nan)) or pd.notna(row.get(col_ret, np.nan))
-            )
+        if portfolio_df.empty:
+            st.warning("No hay activos con nominales positivos en la fecha seleccionada.")
         else:
-            cash_inicio = cash_fin = flujos_netos = 0.0
+            total_valor_mercado = portfolio_df['_Valor Actual'].sum()
+            total_costo         = portfolio_df['Costo'].sum()
+            total_amort         = portfolio_df['Amortizaciones'].sum()
+            total_cup           = portfolio_df['Cupones'].sum()
+            total_div           = portfolio_df['Dividendos'].sum()
+            total_ganancia_r    = total_amort + total_cup + total_div
+            total_ganancia_no_r = portfolio_df['Ganancias no Realizadas'].sum()
+            pct_no_r            = (total_ganancia_no_r / total_costo * 100) if total_costo > 0 else 0
 
-        titulos_inicio      = evolution_df['Valor al Inicio'].sum()
-        titulos_fin         = evolution_df['Valor Actual'].sum()
-        valor_inicial_total = titulos_inicio + cash_inicio
-        valor_final_total   = titulos_fin    + cash_fin
-        ganancia_cash       = valor_final_total - valor_inicial_total - flujos_netos
-        base_cash           = valor_inicial_total + max(flujos_netos, 0)
-        pct_cash            = (ganancia_cash / base_cash * 100) if base_cash > 0 else 0
-        pct_str_cash        = f"({'▼' if pct_cash < 0 else '▲'} {abs(pct_cash):.1f}%)"
+            total_ganancia = total_ganancia_r + total_ganancia_no_r
+            pct_total      = (total_ganancia / total_costo * 100) if total_costo > 0 else 0
+            pct_str        = f"{'▼' if pct_total < 0 else '▲'} {abs(pct_total):.1f}%"
+            c1, c2, c3, c4 = st.columns(4)
+            with c1: _metric("Valor de Mercado",  _fmt_money(total_valor_mercado, moneda))
+            with c2: _metric("Costo Total",        _fmt_money(total_costo, moneda))
+            with c3: _metric("Amort / Cup / Div",  _fmt_money(total_amort + total_cup + total_div, moneda))
+            with c4: _metric("Ganancia Total",      _fmt_money(total_ganancia, moneda), sub_str=pct_str)
+            st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
 
+            # ── Diferencia diaria y mensual por activo (en valor, no %) ──────
+            precios_hist = precios.copy()
+            precios_hist['Fecha'] = pd.to_datetime(precios_hist['Fecha'])
+            hoy = pd.Timestamp(fecha_actual)
+            inicio_mes = hoy.replace(day=1)
 
-        # ── Gráfico: Valor Total vs. Neto Invertido ───────────────────────────
-        try:
-            # Precios enriquecidos con live prices
-            precios_g = precios.copy()
-            if live_prices:
-                today_g = pd.Timestamp.today().normalize()
-                rows_live = [{'Activo': a, 'Fecha': today_g, 'Precio': float(p)}
-                             for a, p in live_prices.items() if pd.notna(p)]
-                if rows_live:
-                    precios_g = pd.concat([precios_g, pd.DataFrame(rows_live)]) \
-                                  .drop_duplicates(subset=['Activo', 'Fecha'], keep='last')
+            def _diff_diaria(asset, nom):
+                ap = precios_hist[precios_hist['Activo'] == asset].sort_values('Fecha')
+                r_hoy = ap[ap['Fecha'] <= hoy]
+                if r_hoy.empty:
+                    return np.nan
+                p_hoy = float(r_hoy.iloc[-1]['Precio'])
+                fecha_hoy_precio = r_hoy.iloc[-1]['Fecha']
+                r_prev = ap[ap['Fecha'] < fecha_hoy_precio]
+                if r_prev.empty:
+                    return np.nan
+                p_prev = float(r_prev.iloc[-1]['Precio'])
+                return (p_hoy - p_prev) * nom
 
-            fi_g = pd.to_datetime(fecha_inicio)
-            ff_g = pd.to_datetime(fecha_fin)
+            def _diff_mensual(asset, nom):
+                ap = precios_hist[precios_hist['Activo'] == asset].sort_values('Fecha')
+                r_hoy = ap[ap['Fecha'] <= hoy]
+                if r_hoy.empty:
+                    return np.nan
+                p_hoy = float(r_hoy.iloc[-1]['Precio'])
+                r_mes = ap[ap['Fecha'] < inicio_mes]
+                if r_mes.empty:
+                    return np.nan
+                p_mes = float(r_mes.iloc[-1]['Precio'])
+                return (p_hoy - p_mes) * nom
 
-            # Fechas del gráfico: fechas con precios en el rango + extremos
-            price_dates_g = precios_g[
-                (precios_g['Fecha'] >= fi_g) & (precios_g['Fecha'] <= ff_g)
-            ]['Fecha'].unique().tolist()
-            chart_dates_g = sorted({pd.Timestamp(d) for d in price_dates_g} | {fi_g, ff_g})
+            def _fmt_diff(x):
+                if not pd.notna(x) or x == 0:
+                    return '-'
+                arrow = '▼' if x < 0 else '▲'
+                return f"{arrow} {_fmt_money(abs(x), moneda)}"
 
-            # ── Construir la serie temporal del gráfico ────────────────────────
-            # Lógica:
-            # "Valor al Inicio" arranca en fi_g = sum(nom_inicio × precio_inicio)
-            #   y es una step function que cambia solo con flujos en el período:
-            #   + Compras (nuevo capital invertido)
-            #   - Ventas (capital desinvertido)
-            #   - Amort / Cupones / Dividendos (capital devuelto)
-            # "Valor Total" = sum(nom_actual × precio_actual) en cada fecha.
-            # En fi_g ambas líneas coinciden (= Valor al Inicio de la tabla).
+            cols_display = [
+                'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
+                'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
+            ]
+            display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display] \
+                             .sort_values('Nominales', ascending=False).reset_index(drop=True).copy()
 
-            all_ops_g = operaciones.copy()
-            all_ops_g['Fecha'] = pd.to_datetime(all_ops_g['Fecha'])
-            assets_g = [a for a in all_ops_g['Activo'].dropna().unique() if pd.notna(a)]
+            display_df['Amort / Cup / Div'] = display_df['Amortizaciones'] + display_df['Cupones'] + display_df['Dividendos']
+            nom_raw = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'}) \
+                          .sort_values('Nominales', ascending=False).reset_index(drop=True)['Nominales']
+            display_df['_nom'] = nom_raw.values
+            display_df['Dif. Diaria']  = display_df.apply(lambda r: _diff_diaria(r['Activo'], r['_nom']), axis=1)
+            display_df['Dif. Mensual'] = display_df.apply(lambda r: _diff_mensual(r['Activo'], r['_nom']), axis=1)
 
-            # ── Paso 1: nom_inicio y precio_inicio por activo (igual que tabla) ─
-            valor_inicio_total = 0.0
-            nom_inicio_g = {}  # asset -> nominales en fi_g (ops < fi_g)
-            for asset in assets_g:
-                aops = all_ops_g[all_ops_g['Activo'] == asset].sort_values('Fecha')
-                ops_before = aops[aops['Fecha'] < fi_g]
-                _, last_reset_pos = _find_last_reset(ops_before)
-                if last_reset_pos >= 0:
-                    reset_idx = ops_before.index[last_reset_pos]
-                    ops_from_reset = aops[aops.index > reset_idx]
-                    ops_until_inicio = ops_from_reset[ops_from_reset['Fecha'] < fi_g]
+            tot_valor_actual = display_df['Valor Actual'].sum()
+            tot_costo        = display_df['Costo'].sum()
+            tot_amort        = display_df['Amort / Cup / Div'].sum()
+            tot_dif_dia      = display_df['Dif. Diaria'].sum()
+            tot_dif_mes      = display_df['Dif. Mensual'].sum()
+            tot_ganancia     = display_df['Ganancia Total'].sum()
+
+            display_df['Nominales']         = display_df['Nominales'].apply(_fmt_number)
+            display_df['Precio Actual']     = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
+            display_df['Valor Actual']      = display_df['Valor Actual'].apply(lambda x: _fmt_money(x, moneda))
+            display_df['Costo']             = display_df['Costo'].apply(lambda x: _fmt_money(x, moneda))
+            display_df['Amort / Cup / Div'] = display_df['Amort / Cup / Div'].apply(lambda x: _fmt_money(x, moneda))
+            display_df['Ganancia Total']    = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
+            display_df['Dif. Diaria']       = display_df['Dif. Diaria'].apply(_fmt_diff)
+            display_df['Dif. Mensual']      = display_df['Dif. Mensual'].apply(_fmt_diff)
+
+            final_cols = ['Activo', 'Nominales', 'Precio Actual', 'Valor Actual',
+                          'Costo', 'Amort / Cup / Div', 'Dif. Diaria', 'Dif. Mensual', 'Ganancia Total']
+            display_df = display_df[final_cols]
+
+            total_row = pd.DataFrame([{
+                'Activo': 'TOTAL', 'Nominales': '-', 'Precio Actual': '-',
+                'Valor Actual':      _fmt_money(tot_valor_actual, moneda),
+                'Costo':             _fmt_money(tot_costo, moneda),
+                'Amort / Cup / Div': _fmt_money(tot_amort, moneda),
+                'Dif. Diaria':       _fmt_diff(tot_dif_dia),
+                'Dif. Mensual':      _fmt_diff(tot_dif_mes),
+                'Ganancia Total':    _fmt_money(tot_ganancia, moneda),
+            }])
+            display_df = pd.concat([display_df, total_row], ignore_index=True)
+            _render_df(display_df)
+
+            if '_nota' in portfolio_df.columns:
+                for nota in portfolio_df[portfolio_df['_nota'] != '']['_nota']:
+                    st.caption(nota)
+
+    with tab2:
+        # ── Evolución histórica ────────────────────────────────────────────────────
+        col_s2, col_i, col_f = st.columns([4, 1, 1])
+        with col_s2:
+            st.markdown('<div style="border-left:4px solid #1A4B9B;padding-left:10px;margin:0.3rem 0 0.5rem;min-height:4.4rem;display:flex;align-items:flex-start;"><div style="font-size:1.2rem;font-weight:700;color:#1B2333;padding-top:0.1rem;">Análisis de la Evolución de la Cartera</div></div>', unsafe_allow_html=True)
+        with col_i:
+            fecha_inicio = st.date_input(
+                "Inicio",
+                value=datetime.now().date() - timedelta(days=365),
+                help="Fecha de inicio del período"
+            )
+        with col_f:
+            fecha_fin = st.date_input(
+                "Fin",
+                value=datetime.now().date(),
+                help="Fecha de fin del período"
+            )
+
+        # Me1: validar rango
+        if fecha_inicio > fecha_fin:
+            st.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
+            return
+
+        evolution_df = calculate_portfolio_evolution(
+            operaciones, precios, fecha_inicio, fecha_fin, moneda=moneda, fx_rates=fx_rates,
+            live_prices=live_prices, live_fx=live_fx
+        )
+
+        if evolution_df.empty:
+            st.warning("No hay datos de evolución para el rango de fechas seleccionado.")
+        else:
+            flujos     = evolution_df['Ventas'].sum() + evolution_df['Amort / Cup / Div'].sum()
+            total_gain = evolution_df['Ganancia Total'].sum()
+            base       = evolution_df['Valor al Inicio'].sum() + evolution_df['Compras'].sum()
+            pct_evo    = (total_gain / base * 100) if base > 0 else 0
+            pct_str2   = f"({'▼' if pct_evo < 0 else '▲'} {abs(pct_evo):.1f}%)"
+            e1, e2, e3, e4, e5 = st.columns(5)
+            with e1: _metric("Valor Total",      _fmt_money(evolution_df['Valor Actual'].sum(), moneda))
+            with e2: _metric("Valor al Inicio",  _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda))
+            with e3: _metric("Compras",          _fmt_money(evolution_df['Compras'].sum(), moneda))
+            with e4: _metric("Ventas + Flujos",  _fmt_money(flujos, moneda))
+            with e5: _metric("Ganancia Total",   _fmt_money(total_gain, moneda))
+            st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
+
+            evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True)[
+                ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
+                 'Amort / Cup / Div', 'Precio Actual', 'Valor Actual', 'Ganancia Total']
+            ].copy()
+            evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
+            for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
+                        'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
+                if col == 'Precio Actual':
+                    evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
                 else:
-                    ops_until_inicio = ops_before
+                    evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
+            _render_df(evo_display)
 
-                nom = 0.0
-                for _, op in ops_until_inicio.iterrows():
-                    tipo = str(op['Tipo']).strip()
-                    qty  = float(op.get('Cantidad', 0) or 0)
-                    if tipo == 'Compra':
-                        nom += qty
-                    elif tipo == 'Venta':
-                        nom = max(nom - qty, 0.0)
-                    elif _clasificar_operacion(tipo) == 'amortizacion' and pd.notna(op.get('Cantidad')) and qty > 0:
-                        nom = max(nom - qty, 0.0)
-                nom_inicio_g[asset] = nom
+            # ── Tabla cash: cross-check por efectivo real ────────────────────────────
+            # El "efectivo real" en una fecha = depósitos − retiros − compras + (ventas+amort+cup+div)
+            # acumulados hasta esa fecha. Esto garantiza que ganancia_cash == ganancia_bonds.
+            ops_cash = operaciones.copy()
+            ops_cash['Fecha'] = pd.to_datetime(ops_cash['Fecha'], errors='coerce')
 
-                if nom > 0:
-                    ap = precios_g[
-                        (precios_g['Activo'] == asset) & (precios_g['Fecha'] <= fi_g)
-                    ]
-                    if not ap.empty:
-                        p = float(ap.iloc[-1]['Precio'])
-                        if moneda == 'ARS':
-                            p *= _get_fx(fx_rates, fi_g)
-                        valor_inicio_total += nom * p
+            cols_ops = ops_cash.columns.tolist()
+            col_dep  = next((c for c in cols_ops if 'deposit' in c.strip().lower()), None)
+            col_ret  = next((c for c in cols_ops if 'retiro'  in c.strip().lower()), None)
+            has_cash = bool(col_dep and col_ret)
 
-            # ── Paso 2: step function de "Valor al Inicio" post fi_g ─────────
-            # Flujos en el período: compras suman, ventas/flujos restan
-            ops_en_periodo_g = all_ops_g[
-                (all_ops_g['Fecha'] >= fi_g) & (all_ops_g['Fecha'] <= ff_g)
-            ].sort_values('Fecha')
+            def _actual_cash(df, fecha, strict_bond=False, strict_ext=False):
+                """Efectivo real acumulado.
+                strict_bond: usa < fecha para flujos de bonos (compras/ventas/amort/cup).
+                strict_ext:  usa < fecha para flujos externos (depósitos/retiros).
+                Para cash_inicio: strict_bond=True, strict_ext=False
+                  → depósitos/retiros del día de inicio cuentan como capital inicial,
+                    pero los bonos comprados ese día no (consistente con bond table).
+                """
+                total = 0.0
+                for _, row in df.iterrows():
+                    fecha_row = row['Fecha']
+                    if pd.isna(fecha_row):
+                        continue
+                    fx  = _get_fx(fx_rates, fecha_row) if moneda == 'ARS' else 1.0
+                    dep = row[col_dep] if col_dep and pd.notna(row.get(col_dep, np.nan)) else 0.0
+                    ret = row[col_ret] if col_ret and pd.notna(row.get(col_ret, np.nan)) else 0.0
+                    cut_ext  = fecha_row <  pd.to_datetime(fecha) if strict_ext  else fecha_row <= pd.to_datetime(fecha)
+                    if cut_ext:
+                        total += (dep - ret) * fx
+                    tipo = row.get('Tipo', np.nan)
+                    if pd.notna(tipo):
+                        cut_bond = fecha_row < pd.to_datetime(fecha) if strict_bond else fecha_row <= pd.to_datetime(fecha)
+                        if cut_bond:
+                            monto = _get_monto(row, moneda, fx_rates)
+                            total += -monto if str(tipo).strip() == 'Compra' else monto
+                return total
 
-            flujo_steps = []  # (Fecha, delta_capital)
-            for _, op in ops_en_periodo_g.iterrows():
-                tipo  = str(op['Tipo']).strip()
-                monto = _get_monto(op, moneda, fx_rates)
-                cat   = _clasificar_operacion(tipo)
-                if tipo == 'Compra':
-                    flujo_steps.append((op['Fecha'], +monto))
-                elif tipo == 'Venta':
-                    flujo_steps.append((op['Fecha'], -monto))
-                elif cat in ('amortizacion', 'cupon', 'dividendo'):
-                    flujo_steps.append((op['Fecha'], -monto))
+            if has_cash:
+                # cash_inicio: depósitos/retiros ≤ fecha_inicio (mismo día = capital inicial),
+                #              bonos < fecha_inicio (consistente con bond table).
+                cash_inicio = _actual_cash(ops_cash, fecha_inicio, strict_bond=True,  strict_ext=False)
+                cash_fin    = _actual_cash(ops_cash, fecha_fin,    strict_bond=False, strict_ext=False)
+                # Flujos externos ESTRICTAMENTE después de fecha_inicio (evita doble-contar
+                # depósitos del día de inicio que ya están en cash_inicio).
+                ops_flujos = ops_cash[
+                    (ops_cash['Fecha'] >  pd.to_datetime(fecha_inicio)) &
+                    (ops_cash['Fecha'] <= pd.to_datetime(fecha_fin))
+                ]
+                flujos_netos = sum(
+                    ((row[col_dep] if pd.notna(row.get(col_dep, np.nan)) else 0.0) -
+                     (row[col_ret] if pd.notna(row.get(col_ret, np.nan)) else 0.0)) *
+                    (_get_fx(fx_rates, row['Fecha']) if moneda == 'ARS' else 1.0)
+                    for _, row in ops_flujos.iterrows()
+                    if pd.notna(row.get(col_dep, np.nan)) or pd.notna(row.get(col_ret, np.nan))
+                )
+            else:
+                cash_inicio = cash_fin = flujos_netos = 0.0
 
-            # Step function acumulada de flujos
-            flujo_cum = {}
-            acc = 0.0
-            for fecha_f, delta in flujo_steps:
-                acc += delta
-                flujo_cum[fecha_f] = acc
+            titulos_inicio      = evolution_df['Valor al Inicio'].sum()
+            titulos_fin         = evolution_df['Valor Actual'].sum()
+            valor_inicial_total = titulos_inicio + cash_inicio
+            valor_final_total   = titulos_fin    + cash_fin
+            ganancia_cash       = valor_final_total - valor_inicial_total - flujos_netos
+            base_cash           = valor_inicial_total + max(flujos_netos, 0)
+            pct_cash            = (ganancia_cash / base_cash * 100) if base_cash > 0 else 0
+            pct_str_cash        = f"({'▼' if pct_cash < 0 else '▲'} {abs(pct_cash):.1f}%)"
 
-            def _vi_at(d):
-                """Valor al Inicio acumulado hasta fecha d (inclusive)."""
-                acc_vi = 0.0
-                for fd, delta in flujo_steps:
-                    if fd <= d:
-                        acc_vi += delta
-                return valor_inicio_total + acc_vi
 
-            # ── Paso 3: holdings actuales por activo en cada fecha ───────────
-            # Arranca desde nom_inicio_g y acumula ops en el período
-            asset_nom_steps = {}  # asset -> list of (Fecha, nom)
-            for asset in assets_g:
-                nom = nom_inicio_g.get(asset, 0.0)
-                steps = [(fi_g, nom)]  # estado en fi_g
-                aops_period = ops_en_periodo_g[ops_en_periodo_g['Activo'] == asset]
-                for _, op in aops_period.iterrows():
-                    tipo = str(op['Tipo']).strip()
-                    qty  = float(op.get('Cantidad', 0) or 0)
-                    if tipo == 'Compra':
-                        nom += qty
-                    elif tipo == 'Venta':
-                        nom = max(nom - qty, 0.0)
-                    elif _clasificar_operacion(tipo) == 'amortizacion' and pd.notna(op.get('Cantidad')) and qty > 0:
-                        nom = max(nom - qty, 0.0)
-                    steps.append((op['Fecha'], nom))
-                asset_nom_steps[asset] = pd.DataFrame(steps, columns=['Fecha', 'Nom']) \
-                                           .set_index('Fecha').groupby(level=0).last()
+            # ── Gráfico: Valor Total vs. Neto Invertido ───────────────────────────
+            try:
+                # Precios enriquecidos con live prices
+                precios_g = precios.copy()
+                if live_prices:
+                    today_g = pd.Timestamp.today().normalize()
+                    rows_live = [{'Activo': a, 'Fecha': today_g, 'Precio': float(p)}
+                                 for a, p in live_prices.items() if pd.notna(p)]
+                    if rows_live:
+                        precios_g = pd.concat([precios_g, pd.DataFrame(rows_live)]) \
+                                      .drop_duplicates(subset=['Activo', 'Fecha'], keep='last')
 
-            def _nom_at(asset, d):
-                df = asset_nom_steps.get(asset)
-                if df is None or df.empty:
-                    return 0.0
-                r = df[df.index <= d]
-                return float(r.iloc[-1]['Nom']) if not r.empty else 0.0
+                fi_g = pd.to_datetime(fecha_inicio)
+                ff_g = pd.to_datetime(fecha_fin)
 
-            # ── Paso 4: construir serie temporal ─────────────────────────────
-            chart_rows_g = []
-            for d in chart_dates_g:
-                d = pd.Timestamp(d)
-                bv = 0.0
+                # Fechas del gráfico: fechas con precios en el rango + extremos
+                price_dates_g = precios_g[
+                    (precios_g['Fecha'] >= fi_g) & (precios_g['Fecha'] <= ff_g)
+                ]['Fecha'].unique().tolist()
+                chart_dates_g = sorted({pd.Timestamp(d) for d in price_dates_g} | {fi_g, ff_g})
+
+                # ── Construir la serie temporal del gráfico ────────────────────────
+                # Lógica:
+                # "Valor al Inicio" arranca en fi_g = sum(nom_inicio × precio_inicio)
+                #   y es una step function que cambia solo con flujos en el período:
+                #   + Compras (nuevo capital invertido)
+                #   - Ventas (capital desinvertido)
+                #   - Amort / Cupones / Dividendos (capital devuelto)
+                # "Valor Total" = sum(nom_actual × precio_actual) en cada fecha.
+                # En fi_g ambas líneas coinciden (= Valor al Inicio de la tabla).
+
+                all_ops_g = operaciones.copy()
+                all_ops_g['Fecha'] = pd.to_datetime(all_ops_g['Fecha'])
+                assets_g = [a for a in all_ops_g['Activo'].dropna().unique() if pd.notna(a)]
+
+                # ── Paso 1: nom_inicio y precio_inicio por activo (igual que tabla) ─
+                valor_inicio_total = 0.0
+                nom_inicio_g = {}  # asset -> nominales en fi_g (ops < fi_g)
                 for asset in assets_g:
-                    nom = _nom_at(asset, d)
+                    aops = all_ops_g[all_ops_g['Activo'] == asset].sort_values('Fecha')
+                    ops_before = aops[aops['Fecha'] < fi_g]
+                    _, last_reset_pos = _find_last_reset(ops_before)
+                    if last_reset_pos >= 0:
+                        reset_idx = ops_before.index[last_reset_pos]
+                        ops_from_reset = aops[aops.index > reset_idx]
+                        ops_until_inicio = ops_from_reset[ops_from_reset['Fecha'] < fi_g]
+                    else:
+                        ops_until_inicio = ops_before
+
+                    nom = 0.0
+                    for _, op in ops_until_inicio.iterrows():
+                        tipo = str(op['Tipo']).strip()
+                        qty  = float(op.get('Cantidad', 0) or 0)
+                        if tipo == 'Compra':
+                            nom += qty
+                        elif tipo == 'Venta':
+                            nom = max(nom - qty, 0.0)
+                        elif _clasificar_operacion(tipo) == 'amortizacion' and pd.notna(op.get('Cantidad')) and qty > 0:
+                            nom = max(nom - qty, 0.0)
+                    nom_inicio_g[asset] = nom
+
                     if nom > 0:
                         ap = precios_g[
-                            (precios_g['Activo'] == asset) & (precios_g['Fecha'] <= d)
+                            (precios_g['Activo'] == asset) & (precios_g['Fecha'] <= fi_g)
                         ]
                         if not ap.empty:
-                            price = float(ap.iloc[-1]['Precio'])
+                            p = float(ap.iloc[-1]['Precio'])
                             if moneda == 'ARS':
-                                price *= _get_fx(fx_rates, d)
-                            bv += nom * price
-                chart_rows_g.append({
-                    'Fecha':          d,
-                    'Valor Total':    bv,
-                    'Valor al Inicio': _vi_at(d),
-                })
+                                p *= _get_fx(fx_rates, fi_g)
+                            valor_inicio_total += nom * p
 
-            ni_steps_g = True  # siempre mostrar ambas líneas
+                # ── Paso 2: step function de "Valor al Inicio" post fi_g ─────────
+                # Flujos en el período: compras suman, ventas/flujos restan
+                ops_en_periodo_g = all_ops_g[
+                    (all_ops_g['Fecha'] >= fi_g) & (all_ops_g['Fecha'] <= ff_g)
+                ].sort_values('Fecha')
 
-            df_chart = pd.DataFrame(chart_rows_g)
-            df_chart['Ganancia'] = df_chart['Valor Total'] - df_chart['Valor al Inicio']
-            lbl_y = 'ARS' if moneda == 'ARS' else 'USD'
+                flujo_steps = []  # (Fecha, delta_capital)
+                for _, op in ops_en_periodo_g.iterrows():
+                    tipo  = str(op['Tipo']).strip()
+                    monto = _get_monto(op, moneda, fx_rates)
+                    cat   = _clasificar_operacion(tipo)
+                    if tipo == 'Compra':
+                        flujo_steps.append((op['Fecha'], +monto))
+                    elif tipo == 'Venta':
+                        flujo_steps.append((op['Fecha'], -monto))
+                    elif cat in ('amortizacion', 'cupon', 'dividendo'):
+                        flujo_steps.append((op['Fecha'], -monto))
 
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=df_chart['Fecha'], y=df_chart['Valor al Inicio'],
-                fill='tozeroy', name='Valor al Inicio',
-                mode='lines', line=dict(color='#93C5FD', width=1.5),
-                fillcolor='rgba(147, 197, 253, 0.25)',
-                yaxis='y1',
-            ))
-            fig.add_trace(go.Scatter(
-                x=df_chart['Fecha'], y=df_chart['Valor Total'],
-                name='Valor Total',
-                mode='lines', line=dict(color='#1A4B9B', width=2.5),
-                yaxis='y1',
-            ))
-            fig.add_trace(go.Scatter(
-                x=df_chart['Fecha'], y=df_chart['Ganancia'],
-                name='Ganancia Acumulada',
-                mode='lines', line=dict(color='#10B981', width=1.5, dash='dot'),
-                yaxis='y2',
-            ))
-            fig.update_layout(
-                hovermode='x unified',
-                xaxis_title=None,
-                yaxis=dict(title=lbl_y, side='left'),
-                yaxis2=dict(title=f'Ganancia ({lbl_y})', side='right', overlaying='y', showgrid=False),
-                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
-                height=340,
-                margin=dict(l=0, r=60, t=30, b=0),
-                plot_bgcolor='#F0F2F6',
-                paper_bgcolor='rgba(0,0,0,0)',
+                # Step function acumulada de flujos
+                flujo_cum = {}
+                acc = 0.0
+                for fecha_f, delta in flujo_steps:
+                    acc += delta
+                    flujo_cum[fecha_f] = acc
+
+                def _vi_at(d):
+                    """Valor al Inicio acumulado hasta fecha d (inclusive)."""
+                    acc_vi = 0.0
+                    for fd, delta in flujo_steps:
+                        if fd <= d:
+                            acc_vi += delta
+                    return valor_inicio_total + acc_vi
+
+                # ── Paso 3: holdings actuales por activo en cada fecha ───────────
+                # Arranca desde nom_inicio_g y acumula ops en el período
+                asset_nom_steps = {}  # asset -> list of (Fecha, nom)
+                for asset in assets_g:
+                    nom = nom_inicio_g.get(asset, 0.0)
+                    steps = [(fi_g, nom)]  # estado en fi_g
+                    aops_period = ops_en_periodo_g[ops_en_periodo_g['Activo'] == asset]
+                    for _, op in aops_period.iterrows():
+                        tipo = str(op['Tipo']).strip()
+                        qty  = float(op.get('Cantidad', 0) or 0)
+                        if tipo == 'Compra':
+                            nom += qty
+                        elif tipo == 'Venta':
+                            nom = max(nom - qty, 0.0)
+                        elif _clasificar_operacion(tipo) == 'amortizacion' and pd.notna(op.get('Cantidad')) and qty > 0:
+                            nom = max(nom - qty, 0.0)
+                        steps.append((op['Fecha'], nom))
+                    asset_nom_steps[asset] = pd.DataFrame(steps, columns=['Fecha', 'Nom']) \
+                                               .set_index('Fecha').groupby(level=0).last()
+
+                def _nom_at(asset, d):
+                    df = asset_nom_steps.get(asset)
+                    if df is None or df.empty:
+                        return 0.0
+                    r = df[df.index <= d]
+                    return float(r.iloc[-1]['Nom']) if not r.empty else 0.0
+
+                # ── Paso 4: construir serie temporal ─────────────────────────────
+                chart_rows_g = []
+                for d in chart_dates_g:
+                    d = pd.Timestamp(d)
+                    bv = 0.0
+                    for asset in assets_g:
+                        nom = _nom_at(asset, d)
+                        if nom > 0:
+                            ap = precios_g[
+                                (precios_g['Activo'] == asset) & (precios_g['Fecha'] <= d)
+                            ]
+                            if not ap.empty:
+                                price = float(ap.iloc[-1]['Precio'])
+                                if moneda == 'ARS':
+                                    price *= _get_fx(fx_rates, d)
+                                bv += nom * price
+                    chart_rows_g.append({
+                        'Fecha':          d,
+                        'Valor Total':    bv,
+                        'Valor al Inicio': _vi_at(d),
+                    })
+
+                ni_steps_g = True  # siempre mostrar ambas líneas
+
+                df_chart = pd.DataFrame(chart_rows_g)
+                df_chart['Ganancia'] = df_chart['Valor Total'] - df_chart['Valor al Inicio']
+                lbl_y = 'ARS' if moneda == 'ARS' else 'USD'
+
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=df_chart['Fecha'], y=df_chart['Valor al Inicio'],
+                    fill='tozeroy', name='Valor al Inicio',
+                    mode='lines', line=dict(color='#93C5FD', width=1.5),
+                    fillcolor='rgba(147, 197, 253, 0.25)',
+                    yaxis='y1',
+                ))
+                fig.add_trace(go.Scatter(
+                    x=df_chart['Fecha'], y=df_chart['Valor Total'],
+                    name='Valor Total',
+                    mode='lines', line=dict(color='#1A4B9B', width=2.5),
+                    yaxis='y1',
+                ))
+                fig.add_trace(go.Scatter(
+                    x=df_chart['Fecha'], y=df_chart['Ganancia'],
+                    name='Ganancia Acumulada',
+                    mode='lines', line=dict(color='#10B981', width=1.5, dash='dot'),
+                    yaxis='y2',
+                ))
+                fig.update_layout(
+                    hovermode='x unified',
+                    xaxis_title=None,
+                    yaxis=dict(title=lbl_y, side='left'),
+                    yaxis2=dict(title=f'Ganancia ({lbl_y})', side='right', overlaying='y', showgrid=False),
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
+                    height=340,
+                    margin=dict(l=0, r=60, t=30, b=0),
+                    plot_bgcolor='#F0F2F6',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            except Exception as e:
+                st.caption(f"⚠️ No se pudo generar el gráfico: {e}")
+
+
+    with tab3:
+        # ── Detalle por activo ─────────────────────────────────────────────────────
+        if not evolution_df.empty:
+            st.markdown("---")
+            _section_header("Análisis Detallado de Evolución por Activo")
+            activos_disponibles = ["Seleccionar"] + evolution_df['Activo'].tolist()
+            activo_sel = st.selectbox(
+                "Seleccionar activo para análisis detallado:",
+                activos_disponibles,
+                index=0,
             )
-            st.plotly_chart(fig, use_container_width=True)
-
-        except Exception as e:
-            st.caption(f"⚠️ No se pudo generar el gráfico: {e}")
-
-
-    # ── Detalle por activo ─────────────────────────────────────────────────────
-    if not evolution_df.empty:
-        st.markdown("---")
-        _section_header("Análisis Detallado de Evolución por Activo")
-        activos_disponibles = ["Seleccionar"] + evolution_df['Activo'].tolist()
-        activo_sel = st.selectbox(
-            "Seleccionar activo para análisis detallado:",
-            activos_disponibles,
-            index=0,
-        )
-        if activo_sel and activo_sel != "Seleccionar":
-            mostrar_analisis_detallado_activo(
-                operaciones, precios, activo_sel, fecha_inicio, fecha_fin,
-                moneda=moneda, fx_rates=fx_rates,
-                live_prices=live_prices, live_fx=live_fx
-            )
+            if activo_sel and activo_sel != "Seleccionar":
+                mostrar_analisis_detallado_activo(
+                    operaciones, precios, activo_sel, fecha_inicio, fecha_fin,
+                    moneda=moneda, fx_rates=fx_rates,
+                    live_prices=live_prices, live_fx=live_fx
+                )
 
     # ══════════════════════════════════════════
     # UPLOADER — al pie de la página
