@@ -1227,8 +1227,11 @@ def main():
         total_ganancia = total_ganancia_r + total_ganancia_no_r
         pct_total      = (total_ganancia / total_costo * 100) if total_costo > 0 else 0
         pct_str        = f"{'▼' if pct_total < 0 else '▲'} {abs(pct_total):.1f}%"
-        c1, = st.columns(1)
-        with c1: _metric("Valor de Mercado", _fmt_money(total_valor_mercado, moneda))
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: _metric("Valor de Mercado",  _fmt_money(total_valor_mercado, moneda))
+        with c2: _metric("Costo Total",        _fmt_money(total_costo, moneda))
+        with c3: _metric("Amort / Cup / Div",  _fmt_money(total_amort + total_cup + total_div, moneda))
+        with c4: _metric("Ganancia Total",      _fmt_money(total_ganancia, moneda), sub_str=pct_str)
         st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
 
         # ── Diferencia diaria y mensual por activo (en valor, no %) ──────────
