@@ -374,11 +374,12 @@ def load_data_resumen(filename='port dummy.xlsx'):
         operaciones_mapped['Precio ARS'] = pd.to_numeric(trades_raw['Price'], errors='coerce')
         operaciones_mapped['Monto ARS']  = pd.to_numeric(trades_raw['Value'], errors='coerce').abs()
 
-        # Filtrar filas sin fecha o activo válido
+        # Filtrar filas sin fecha, activo válido, o cantidad cero
         operaciones_mapped = operaciones_mapped[
             operaciones_mapped['Fecha'].notna() &
             operaciones_mapped['Activo'].notna() &
-            (operaciones_mapped['Activo'] != 'nan')
+            (operaciones_mapped['Activo'] != 'nan') &
+            (operaciones_mapped['Cantidad'].fillna(0) != 0)
         ].reset_index(drop=True)
 
         # ── Precios ───────────────────────────────────────────────────────────
@@ -684,7 +685,7 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
             if tipo == 'Compra':
                 costo_prev          = current_nominals * costo_unit_promedio
                 current_nominals   += op['Cantidad']
-                costo_unit_promedio = (costo_prev + monto) / current_nominals
+                costo_unit_promedio = (costo_prev + monto) / current_nominals if current_nominals else 0.0
             elif tipo == 'Venta':
                 current_nominals -= op['Cantidad']
             else:
