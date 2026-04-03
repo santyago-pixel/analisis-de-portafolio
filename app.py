@@ -1282,7 +1282,8 @@ def main():
             'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
             'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
         ]
-        display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].copy()
+        display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display] \
+                         .sort_values('Nominales', ascending=False).reset_index(drop=True).copy()
         display_df['Nominales']      = display_df['Nominales'].apply(_fmt_number)
         display_df['Precio Actual']  = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
         display_df['Valor Actual']   = display_df['Valor Actual'].apply(lambda x: _fmt_money(x, moneda))
@@ -1349,7 +1350,7 @@ def main():
         }])
         _render_df(summary_evo, left_cols=())
 
-        evo_display = evolution_df.copy()
+        evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True).copy()
         evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
         for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
                     'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
