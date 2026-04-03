@@ -366,11 +366,13 @@ def load_data_resumen(filename='port dummy.xlsx'):
         operaciones_mapped['Fecha']      = pd.to_datetime(trades_raw['Date'], errors='coerce')
         operaciones_mapped['Tipo']       = trades_raw['Trade'].astype(str).str.strip().str.title()
         operaciones_mapped['Activo']     = trades_raw['Asset'].astype(str).str.strip()
-        operaciones_mapped['Cantidad']   = pd.to_numeric(trades_raw['Nominal'], errors='coerce')
+        # Nominal puede venir negativo en Ventas/Amortizaciones; normalizamos con abs()
+        # porque el signo lo determina el Tipo (Compra/Venta) en las funciones de cálculo.
+        operaciones_mapped['Cantidad']   = pd.to_numeric(trades_raw['Nominal'], errors='coerce').abs()
         operaciones_mapped['Precio']     = np.nan
         operaciones_mapped['Monto']      = np.nan
         operaciones_mapped['Precio ARS'] = pd.to_numeric(trades_raw['Price'], errors='coerce')
-        operaciones_mapped['Monto ARS']  = pd.to_numeric(trades_raw['Value'], errors='coerce')
+        operaciones_mapped['Monto ARS']  = pd.to_numeric(trades_raw['Value'], errors='coerce').abs()
 
         # Filtrar filas sin fecha o activo válido
         operaciones_mapped = operaciones_mapped[
