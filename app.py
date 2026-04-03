@@ -857,6 +857,25 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         if nom_inicio <= 0 and ops_en_rango.empty:
             continue
 
+        # Excluir activos cuya amortización final cae exactamente en fecha_inicio:
+        # su posición efectiva el primer día del período ya es cero.
+        # Solo se excluye si tampoco hay operaciones posteriores en el rango.
+        ops_on_inicio_day   = ops_en_rango[ops_en_rango['Fecha'] == pd.to_datetime(fecha_inicio)]
+        ops_after_inicio_day = ops_en_rango[ops_en_rango['Fecha'] >  pd.to_datetime(fecha_inicio)]
+        nom_after_inicio_day = nom_inicio
+        for _, op in ops_on_inicio_day.iterrows():
+            tipo = op['Tipo'].strip()
+            if tipo == 'Compra':
+                nom_after_inicio_day += op['Cantidad']
+            elif tipo == 'Venta':
+                nom_after_inicio_day -= op['Cantidad']
+            elif _clasificar_operacion(tipo) == 'amortizacion':
+                qty = op.get('Cantidad', np.nan)
+                if pd.notna(qty) and qty > 0:
+                    nom_after_inicio_day = max(nom_after_inicio_day - qty, 0)
+        if nom_after_inicio_day <= 0 and ops_after_inicio_day.empty:
+            continue
+
         # Acumulados en el período
         nom_fin    = nom_inicio
         sales_fin  = sales_inicio
