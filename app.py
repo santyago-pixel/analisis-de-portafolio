@@ -1378,23 +1378,7 @@ def main():
 
         def _render_evo_block(df, with_diffs=False):
             """Renderiza cards + tabla para un DataFrame de evolución."""
-            flujos     = df['Ventas'].sum() + df['Amort / Cup / Div'].sum()
-            total_gain = df['Ganancia Total'].sum()
-            e1, e2, e3, e4, e5 = st.columns(5)
-            with e1: _metric("Valor Total",     _fmt_money(df['Valor Actual'].sum(), moneda))
-            with e2: _metric("Valor al Inicio", _fmt_money(df['Valor al Inicio'].sum(), moneda))
-            with e3: _metric("Compras",         _fmt_money(df['Compras'].sum(), moneda))
-            with e4: _metric("Ventas + Flujos", _fmt_money(flujos, moneda))
-            with e5: _metric("Ganancia Total",  _fmt_money(total_gain, moneda))
-            st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
-
             evo_disp = df.sort_values('Nominales', ascending=False).reset_index(drop=True).copy()
-
-            if with_diffs:
-                evo_disp['Dif. Diaria']  = evo_disp.apply(lambda r: _dif_dia_nom(r['Activo'], r['Nominales']), axis=1)
-                evo_disp['Dif. Mensual'] = evo_disp.apply(lambda r: _dif_mes_nom(r['Activo'], r['Nominales']), axis=1)
-                tot_dif_dia = evo_disp['Dif. Diaria'].sum()
-                tot_dif_mes = evo_disp['Dif. Mensual'].sum()
 
             # totales numéricos antes de formatear
             tot_val  = evo_disp['Valor Actual'].sum()
@@ -1405,12 +1389,35 @@ def main():
             tot_gan  = evo_disp['Ganancia Total'].sum()
             tot_neto = tot_comp - tot_ven
 
-            # Fusionar Compras y Ventas en columna Neto (antes de formatear)
-            evo_disp['Neto'] = evo_disp['Compras'] - evo_disp['Ventas']
+            if with_diffs:
+                evo_disp['Dif. Diaria']  = evo_disp.apply(lambda r: _dif_dia_nom(r['Activo'], r['Nominales']), axis=1)
+                evo_disp['Dif. Mensual'] = evo_disp.apply(lambda r: _dif_mes_nom(r['Activo'], r['Nominales']), axis=1)
+                tot_dif_dia = evo_disp['Dif. Diaria'].sum()
+                tot_dif_mes = evo_disp['Dif. Mensual'].sum()
+                # Cards: Flujos, Dif. Diaria, Dif. Mensual
+                tot_flujos = tot_comp + tot_ven + tot_acd
+                e1, e2, e3, e4, e5 = st.columns(5)
+                with e1: _metric("Valor Total",        _fmt_money(tot_val, moneda))
+                with e2: _metric("Valor al Inicio",    _fmt_money(tot_vi, moneda))
+                with e3: _metric("Flujos",             _fmt_money(tot_flujos, moneda))
+                with e4: _metric("Diferencia Diaria",  _fmt_diff(tot_dif_dia))
+                with e5: _metric("Diferencia Mensual", _fmt_diff(tot_dif_mes))
+            else:
+                flujos = tot_ven + tot_acd
+                e1, e2, e3, e4, e5 = st.columns(5)
+                with e1: _metric("Valor Total",     _fmt_money(tot_val, moneda))
+                with e2: _metric("Valor al Inicio", _fmt_money(tot_vi, moneda))
+                with e3: _metric("Compras",         _fmt_money(tot_comp, moneda))
+                with e4: _metric("Ventas + Flujos", _fmt_money(flujos, moneda))
+                with e5: _metric("Ganancia Total",  _fmt_money(tot_gan, moneda))
+            st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
+
+            # Fusionar Compras y Ventas en columna "Compras - Ventas" (antes de formatear)
+            evo_disp['Compras - Ventas'] = evo_disp['Compras'] - evo_disp['Ventas']
 
             evo_disp['Nominales'] = evo_disp['Nominales'].apply(_fmt_number)
             for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
-                        'Neto', 'Amort / Cup / Div', 'Ganancia Total']:
+                        'Compras - Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
                 if col == 'Precio Actual':
                     evo_disp[col] = evo_disp[col].apply(lambda x: _fmt_price(x, moneda))
                 else:
@@ -1419,22 +1426,22 @@ def main():
             if with_diffs:
                 evo_disp['Dif. Diaria']  = evo_disp['Dif. Diaria'].apply(_fmt_diff)
                 evo_disp['Dif. Mensual'] = evo_disp['Dif. Mensual'].apply(_fmt_diff)
-                final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Neto',
+                final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Compras - Ventas',
                               'Amort / Cup / Div', 'Precio Actual', 'Valor Actual',
                               'Dif. Diaria', 'Dif. Mensual']
                 total_row = pd.DataFrame([{
                     'Activo': 'TOTAL', 'Nominales': '-', 'Valor al Inicio': _fmt_money(tot_vi, moneda),
-                    'Neto': _fmt_money(tot_neto, moneda),
+                    'Compras - Ventas': _fmt_money(tot_neto, moneda),
                     'Amort / Cup / Div': _fmt_money(tot_acd, moneda), 'Precio Actual': '-',
                     'Valor Actual': _fmt_money(tot_val, moneda),
                     'Dif. Diaria': _fmt_diff(tot_dif_dia), 'Dif. Mensual': _fmt_diff(tot_dif_mes),
                 }])
             else:
-                final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Neto',
+                final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Compras - Ventas',
                               'Amort / Cup / Div', 'Precio Actual', 'Valor Actual', 'Ganancia Total']
                 total_row = pd.DataFrame([{
                     'Activo': 'TOTAL', 'Nominales': '-', 'Valor al Inicio': _fmt_money(tot_vi, moneda),
-                    'Neto': _fmt_money(tot_neto, moneda),
+                    'Compras - Ventas': _fmt_money(tot_neto, moneda),
                     'Amort / Cup / Div': _fmt_money(tot_acd, moneda), 'Precio Actual': '-',
                     'Valor Actual': _fmt_money(tot_val, moneda),
                     'Ganancia Total': _fmt_money(tot_gan, moneda),
