@@ -1350,7 +1350,10 @@ def main():
         }])
         _render_df(summary_evo, left_cols=())
 
-        evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True).copy()
+        evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True)[
+            ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
+             'Amort / Cup / Div', 'Precio Actual', 'Valor Actual', 'Ganancia Total']
+        ].copy()
         evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
         for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
                     'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
