@@ -935,16 +935,22 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         # porque internamente valor_inicio = 0 para esos activos.
         valor_inicio_display = valor_inicio if nom_inicio > 0 else compras_en_periodo
 
+        # "Compras Adicionales" = compras realizadas sobre una posición pre-existente.
+        # Para activos nuevos (nom_inicio = 0) es 0 porque su inversión inicial ya
+        # queda capturada en Valor al Inicio (evita doble conteo en la tarjeta Flujos).
+        compras_adicionales = compras_en_periodo if nom_inicio > 0 else 0
+
         evolution_data.append({
-            'Activo':            asset,
-            'Nominales':         nom_fin,
-            'Precio Actual':     precio_fin,
-            'Valor Actual':      valor_fin,
-            'Valor al Inicio':   valor_inicio_display,
-            'Compras':           compras_en_periodo,
-            'Ventas':            ventas_en_periodo,
-            'Amort / Cup / Div': div_cup_en_periodo,
-            'Ganancia Total':    ganancia_total,
+            'Activo':               asset,
+            'Nominales':            nom_fin,
+            'Precio Actual':        precio_fin,
+            'Valor Actual':         valor_fin,
+            'Valor al Inicio':      valor_inicio_display,
+            'Compras':              compras_en_periodo,
+            'Compras Adicionales':  compras_adicionales,
+            'Ventas':               ventas_en_periodo,
+            'Amort / Cup / Div':    div_cup_en_periodo,
+            'Ganancia Total':       ganancia_total,
         })
 
     return pd.DataFrame(evolution_data)
@@ -1394,8 +1400,9 @@ def main():
                 evo_disp['Dif. Mensual'] = evo_disp.apply(lambda r: _dif_mes_nom(r['Activo'], r['Nominales']), axis=1)
                 tot_dif_dia = evo_disp['Dif. Diaria'].sum()
                 tot_dif_mes = evo_disp['Dif. Mensual'].sum()
-                # Cards: Flujos, Dif. Diaria, Dif. Mensual
-                tot_flujos = tot_comp + tot_ven + tot_acd
+                # Cards: Flujos = compras adicionales (sobre posición pre-existente) − ventas − amort
+                # Las compras de activos nuevos ya están en Valor al Inicio → no se suman de nuevo.
+                tot_flujos = evo_disp['Compras Adicionales'].sum() - tot_ven - tot_acd
                 e1, e2, e3, e4, e5 = st.columns(5)
                 with e1: _metric("Valor Total",        _fmt_money(tot_val, moneda))
                 with e2: _metric("Valor al Inicio",    _fmt_money(tot_vi, moneda))
