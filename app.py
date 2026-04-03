@@ -1346,6 +1346,47 @@ def main():
             st.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
             return
 
+        def _render_evo_block(df):
+            """Renderiza cards + tabla para un DataFrame de evolución."""
+            flujos     = df['Ventas'].sum() + df['Amort / Cup / Div'].sum()
+            total_gain = df['Ganancia Total'].sum()
+            e1, e2, e3, e4, e5 = st.columns(5)
+            with e1: _metric("Valor Total",     _fmt_money(df['Valor Actual'].sum(), moneda))
+            with e2: _metric("Valor al Inicio", _fmt_money(df['Valor al Inicio'].sum(), moneda))
+            with e3: _metric("Compras",         _fmt_money(df['Compras'].sum(), moneda))
+            with e4: _metric("Ventas + Flujos", _fmt_money(flujos, moneda))
+            with e5: _metric("Ganancia Total",  _fmt_money(total_gain, moneda))
+            st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
+            evo_disp = df.sort_values('Nominales', ascending=False).reset_index(drop=True)[
+                ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
+                 'Amort / Cup / Div', 'Precio Actual', 'Valor Actual', 'Ganancia Total']
+            ].copy()
+            evo_disp['Nominales'] = evo_disp['Nominales'].apply(_fmt_number)
+            for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
+                        'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
+                if col == 'Precio Actual':
+                    evo_disp[col] = evo_disp[col].apply(lambda x: _fmt_price(x, moneda))
+                else:
+                    evo_disp[col] = evo_disp[col].apply(lambda x: _fmt_money(x, moneda))
+            _render_df(evo_disp)
+
+        # ── Análisis Mensual (fechas fijas: 1° del mes → hoy) ─────────────────
+        hoy_t2        = datetime.now().date()
+        inicio_mes_t2 = hoy_t2.replace(day=1)
+        _section_header("Análisis Mensual",
+                         f"{inicio_mes_t2.strftime('%d/%m/%Y')} — {hoy_t2.strftime('%d/%m/%Y')}")
+        evo_mes = calculate_portfolio_evolution(
+            operaciones, precios, inicio_mes_t2, hoy_t2, moneda=moneda, fx_rates=fx_rates,
+            live_prices=live_prices, live_fx=live_fx
+        )
+        if evo_mes.empty:
+            st.info("Sin datos para el mes en curso.")
+        else:
+            _render_evo_block(evo_mes)
+
+        st.markdown('<div style="margin-bottom:1.5rem;"></div>', unsafe_allow_html=True)
+
+        # ── Análisis por período seleccionado ─────────────────────────────────
         evolution_df = calculate_portfolio_evolution(
             operaciones, precios, fecha_inicio, fecha_fin, moneda=moneda, fx_rates=fx_rates,
             live_prices=live_prices, live_fx=live_fx
@@ -1354,31 +1395,7 @@ def main():
         if evolution_df.empty:
             st.warning("No hay datos de evolución para el rango de fechas seleccionado.")
         else:
-            flujos     = evolution_df['Ventas'].sum() + evolution_df['Amort / Cup / Div'].sum()
-            total_gain = evolution_df['Ganancia Total'].sum()
-            base       = evolution_df['Valor al Inicio'].sum() + evolution_df['Compras'].sum()
-            pct_evo    = (total_gain / base * 100) if base > 0 else 0
-            pct_str2   = f"({'▼' if pct_evo < 0 else '▲'} {abs(pct_evo):.1f}%)"
-            e1, e2, e3, e4, e5 = st.columns(5)
-            with e1: _metric("Valor Total",      _fmt_money(evolution_df['Valor Actual'].sum(), moneda))
-            with e2: _metric("Valor al Inicio",  _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda))
-            with e3: _metric("Compras",          _fmt_money(evolution_df['Compras'].sum(), moneda))
-            with e4: _metric("Ventas + Flujos",  _fmt_money(flujos, moneda))
-            with e5: _metric("Ganancia Total",   _fmt_money(total_gain, moneda))
-            st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
-
-            evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True)[
-                ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
-                 'Amort / Cup / Div', 'Precio Actual', 'Valor Actual', 'Ganancia Total']
-            ].copy()
-            evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
-            for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
-                        'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
-                if col == 'Precio Actual':
-                    evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
-                else:
-                    evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
-            _render_df(evo_display)
+            _render_evo_block(evolution_df)
 
             # ── Tabla cash: cross-check por efectivo real ────────────────────────────
             # El "efectivo real" en una fecha = depósitos − retiros − compras + (ventas+amort+cup+div)
