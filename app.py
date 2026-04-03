@@ -1324,29 +1324,35 @@ def main():
                     st.caption(nota)
 
     with tab2:
-        # ── Evolución histórica ────────────────────────────────────────────────────
-        col_s2, col_i, col_f = st.columns([4, 1, 1])
-        with col_s2:
-            st.markdown('<div style="border-left:4px solid #1A4B9B;padding-left:10px;margin:0.3rem 0 0.5rem;min-height:4.4rem;display:flex;align-items:flex-start;"><div style="font-size:1.2rem;font-weight:700;color:#1B2333;padding-top:0.1rem;">Análisis de la Evolución de la Cartera</div></div>', unsafe_allow_html=True)
-        with col_i:
-            fecha_inicio = st.date_input(
-                "Inicio",
-                value=datetime.now().date() - timedelta(days=365),
-                help="Fecha de inicio del período"
-            )
-        with col_f:
-            fecha_fin = st.date_input(
-                "Fin",
-                value=datetime.now().date(),
-                help="Fecha de fin del período"
-            )
+        # ── helpers de precios para dif diaria/mensual ─────────────────────────
+        _ph = precios.copy()
+        _ph['Fecha'] = pd.to_datetime(_ph['Fecha'])
+        _hoy   = pd.Timestamp(datetime.now().date())
+        _imes  = _hoy.replace(day=1)
 
-        # Me1: validar rango
-        if fecha_inicio > fecha_fin:
-            st.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
-            return
+        def _dif_dia_nom(asset, nom):
+            ap = _ph[_ph['Activo'] == asset].sort_values('Fecha')
+            rh = ap[ap['Fecha'] <= _hoy]
+            if rh.empty: return np.nan
+            p_hoy = float(rh.iloc[-1]['Precio'])
+            rp = ap[ap['Fecha'] < rh.iloc[-1]['Fecha']]
+            if rp.empty: return np.nan
+            return (p_hoy - float(rp.iloc[-1]['Precio'])) * nom
 
-        def _render_evo_block(df):
+        def _dif_mes_nom(asset, nom):
+            ap = _ph[_ph['Activo'] == asset].sort_values('Fecha')
+            rh = ap[ap['Fecha'] <= _hoy]
+            if rh.empty: return np.nan
+            p_hoy = float(rh.iloc[-1]['Precio'])
+            rm = ap[ap['Fecha'] < _imes]
+            if rm.empty: return np.nan
+            return (p_hoy - float(rm.iloc[-1]['Precio'])) * nom
+
+        def _fmt_diff(x):
+            if not pd.notna(x) or x == 0: return '-'
+            return f"{'▼' if x < 0 else '▲'} {_fmt_money(abs(x), moneda)}"
+
+        def _render_evo_block(df, with_diffs=False):
             """Renderiza cards + tabla para un DataFrame de evolución."""
             flujos     = df['Ventas'].sum() + df['Amort / Cup / Div'].sum()
             total_gain = df['Ganancia Total'].sum()
@@ -1357,10 +1363,23 @@ def main():
             with e4: _metric("Ventas + Flujos", _fmt_money(flujos, moneda))
             with e5: _metric("Ganancia Total",  _fmt_money(total_gain, moneda))
             st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
-            evo_disp = df.sort_values('Nominales', ascending=False).reset_index(drop=True)[
-                ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
-                 'Amort / Cup / Div', 'Precio Actual', 'Valor Actual', 'Ganancia Total']
-            ].copy()
+
+            evo_disp = df.sort_values('Nominales', ascending=False).reset_index(drop=True).copy()
+
+            if with_diffs:
+                evo_disp['Dif. Diaria']  = evo_disp.apply(lambda r: _dif_dia_nom(r['Activo'], r['Nominales']), axis=1)
+                evo_disp['Dif. Mensual'] = evo_disp.apply(lambda r: _dif_mes_nom(r['Activo'], r['Nominales']), axis=1)
+                tot_dif_dia = evo_disp['Dif. Diaria'].sum()
+                tot_dif_mes = evo_disp['Dif. Mensual'].sum()
+
+            # totales numéricos antes de formatear
+            tot_val  = evo_disp['Valor Actual'].sum()
+            tot_vi   = evo_disp['Valor al Inicio'].sum()
+            tot_comp = evo_disp['Compras'].sum()
+            tot_ven  = evo_disp['Ventas'].sum()
+            tot_acd  = evo_disp['Amort / Cup / Div'].sum()
+            tot_gan  = evo_disp['Ganancia Total'].sum()
+
             evo_disp['Nominales'] = evo_disp['Nominales'].apply(_fmt_number)
             for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
                         'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
@@ -1368,6 +1387,33 @@ def main():
                     evo_disp[col] = evo_disp[col].apply(lambda x: _fmt_price(x, moneda))
                 else:
                     evo_disp[col] = evo_disp[col].apply(lambda x: _fmt_money(x, moneda))
+
+            if with_diffs:
+                evo_disp['Dif. Diaria']  = evo_disp['Dif. Diaria'].apply(_fmt_diff)
+                evo_disp['Dif. Mensual'] = evo_disp['Dif. Mensual'].apply(_fmt_diff)
+                final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
+                              'Amort / Cup / Div', 'Precio Actual', 'Valor Actual',
+                              'Dif. Diaria', 'Dif. Mensual', 'Ganancia Total']
+                total_row = pd.DataFrame([{
+                    'Activo': 'TOTAL', 'Nominales': '-', 'Valor al Inicio': _fmt_money(tot_vi, moneda),
+                    'Compras': _fmt_money(tot_comp, moneda), 'Ventas': _fmt_money(tot_ven, moneda),
+                    'Amort / Cup / Div': _fmt_money(tot_acd, moneda), 'Precio Actual': '-',
+                    'Valor Actual': _fmt_money(tot_val, moneda),
+                    'Dif. Diaria': _fmt_diff(tot_dif_dia), 'Dif. Mensual': _fmt_diff(tot_dif_mes),
+                    'Ganancia Total': _fmt_money(tot_gan, moneda),
+                }])
+            else:
+                final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
+                              'Amort / Cup / Div', 'Precio Actual', 'Valor Actual', 'Ganancia Total']
+                total_row = pd.DataFrame([{
+                    'Activo': 'TOTAL', 'Nominales': '-', 'Valor al Inicio': _fmt_money(tot_vi, moneda),
+                    'Compras': _fmt_money(tot_comp, moneda), 'Ventas': _fmt_money(tot_ven, moneda),
+                    'Amort / Cup / Div': _fmt_money(tot_acd, moneda), 'Precio Actual': '-',
+                    'Valor Actual': _fmt_money(tot_val, moneda),
+                    'Ganancia Total': _fmt_money(tot_gan, moneda),
+                }])
+
+            evo_disp = pd.concat([evo_disp[final_cols], total_row], ignore_index=True)
             _render_df(evo_disp)
 
         # ── Análisis Mensual (fechas fijas: 1° del mes → hoy) ─────────────────
@@ -1382,20 +1428,38 @@ def main():
         if evo_mes.empty:
             st.info("Sin datos para el mes en curso.")
         else:
-            _render_evo_block(evo_mes)
+            _render_evo_block(evo_mes, with_diffs=True)
 
         st.markdown('<div style="margin-bottom:1.5rem;"></div>', unsafe_allow_html=True)
 
-        # ── Análisis por período seleccionado ─────────────────────────────────
-        evolution_df = calculate_portfolio_evolution(
-            operaciones, precios, fecha_inicio, fecha_fin, moneda=moneda, fx_rates=fx_rates,
-            live_prices=live_prices, live_fx=live_fx
-        )
+        # ── Selector de fechas ────────────────────────────────────────────────
+        col_s2, col_i, col_f = st.columns([4, 1, 1])
+        with col_s2:
+            _section_header("Análisis de la Evolución de la Cartera")
+        with col_i:
+            fecha_inicio = st.date_input(
+                "Inicio",
+                value=datetime.now().date() - timedelta(days=365),
+                help="Fecha de inicio del período"
+            )
+        with col_f:
+            fecha_fin = st.date_input(
+                "Fin",
+                value=datetime.now().date(),
+                help="Fecha de fin del período"
+            )
 
-        if evolution_df.empty:
-            st.warning("No hay datos de evolución para el rango de fechas seleccionado.")
+        if fecha_inicio > fecha_fin:
+            st.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
         else:
-            _render_evo_block(evolution_df)
+            evolution_df = calculate_portfolio_evolution(
+                operaciones, precios, fecha_inicio, fecha_fin, moneda=moneda, fx_rates=fx_rates,
+                live_prices=live_prices, live_fx=live_fx
+            )
+            if evolution_df.empty:
+                st.warning("No hay datos de evolución para el rango de fechas seleccionado.")
+            else:
+                _render_evo_block(evolution_df)
 
             # ── Tabla cash: cross-check por efectivo real ────────────────────────────
             # El "efectivo real" en una fecha = depósitos − retiros − compras + (ventas+amort+cup+div)
