@@ -1346,7 +1346,7 @@ def main():
             'Valor al Inicio': _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda),
             'Compras':         _fmt_money(evolution_df['Compras'].sum(), moneda),
             'Ventas + Flujos': _fmt_money(flujos, moneda),
-            'Ganancia Total':  f"{_fmt_money(total_gain, moneda)} {pct_str2}",
+            'Ganancia Total':  _fmt_money(total_gain, moneda),
         }])
         _render_df(summary_evo, left_cols=())
 
