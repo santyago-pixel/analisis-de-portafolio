@@ -691,7 +691,12 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
             else:
                 categoria = _clasificar_operacion(tipo)
                 if categoria == 'amortizacion':
-                    total_amort      += monto
+                    total_amort += monto
+                    # En formato Resumen la amortización incluye Cantidad explícita
+                    # (el nominal restituido). En Excel Propio Cantidad es NaN → no aplica.
+                    qty = op.get('Cantidad', np.nan)
+                    if pd.notna(qty) and qty > 0:
+                        current_nominals = max(current_nominals - qty, 0)
                 elif categoria == 'cupon':
                     total_cupones    += monto
                 elif categoria == 'dividendo':
@@ -813,6 +818,9 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
                 sales_inicio += monto
             elif _clasificar_operacion(tipo):
                 divcup_inicio += monto
+                qty = op.get('Cantidad', np.nan)
+                if _clasificar_operacion(tipo) == 'amortizacion' and pd.notna(qty) and qty > 0:
+                    nom_inicio = max(nom_inicio - qty, 0)
 
         # Omitir activos sin actividad relevante en el período
         if nom_inicio <= 0 and ops_en_rango.empty:
@@ -835,6 +843,9 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
                 sales_fin += monto
             elif _clasificar_operacion(tipo):
                 divcup_fin += monto
+                qty = op.get('Cantidad', np.nan)
+                if _clasificar_operacion(tipo) == 'amortizacion' and pd.notna(qty) and qty > 0:
+                    nom_fin = max(nom_fin - qty, 0)
 
         # M3: advertir si faltan precios
         avail_inicio = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_inicio)]
