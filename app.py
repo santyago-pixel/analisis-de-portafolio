@@ -200,6 +200,17 @@ hr {
     margin: 1.2rem 0 !important;
 }
 
+/* ══════════════════════════════════════════════
+   TABLAS DE PORTAFOLIO (HTML renderizado)
+══════════════════════════════════════════════ */
+.ptable { width:100%; border-collapse:collapse; font-size:13px; font-family:'Inter',sans-serif; margin-bottom:0.5rem; }
+.ptable th { padding:8px 14px; border-bottom:2px solid #e2e8f0; color:#6b7280; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; font-weight:600; background:#f8fafc; white-space:nowrap; }
+.ptable td { padding:8px 14px; border-bottom:1px solid #f1f5f9; color:#1B2333; white-space:nowrap; }
+.ptable tr:last-child td { border-bottom:none; }
+.ptable tr:hover td { background:#f8fafc; }
+.ptable .r { text-align:right; }
+.ptable .l { text-align:left; }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1023,19 +1034,7 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo,
         )
 
         st.markdown(f"**Operaciones detalladas para {activo}:**")
-        st.dataframe(
-            _right_align(display, left_cols=('Fecha', 'Operación')),
-            use_container_width=True,
-            hide_index=True,
-            height=_df_height(len(display)),
-            column_config={
-                "Fecha":     st.column_config.TextColumn("Fecha",     width="small"),
-                "Operación": st.column_config.TextColumn("Operación", width="medium"),
-                "Nominales": st.column_config.TextColumn("Nominales", width="small"),
-                "Precio":    st.column_config.TextColumn("Precio",    width="small"),
-                "Valor":     st.column_config.TextColumn("Valor",     width="small"),
-            }
-        )
+        _render_df(display, left_cols=('Fecha', 'Operación'))
 
         csv_detalle = detalle_df.to_csv(index=False)
         st.download_button(
@@ -1055,15 +1054,13 @@ def _fmt_money(x, moneda='USD'):
     """Formatea un monto monetario según la moneda.
 
     USD: dos decimales (ej: $1,234.56)
-    ARS: sin decimales porque los valores en pesos son grandes (ej: $1,234,567)
+    ARS: en millones con un decimal (ej: $1,234.5M)
     Cero: muestra "-"
     """
-    if not pd.notna(x):
-        return "-"
-    if x == 0:
+    if not pd.notna(x) or x == 0:
         return "-"
     if moneda == 'ARS':
-        return f"${x:,.0f}"
+        return f"${x / 1_000_000:,.1f}M"
     return f"${x:,.2f}"
 
 
@@ -1080,22 +1077,21 @@ def _fmt_number(x):
     return f"{x:,.0f}"
 
 
-def _right_align(df, left_cols=('Activo',)):
-    """Aplica alineación derecha a todas las columnas excepto las indicadas en left_cols."""
-    all_cols = df.columns.tolist()
-    right_cols = [c for c in all_cols if c not in left_cols]
-    styled = df.style
-    if right_cols:
-        styled = styled.set_properties(subset=right_cols, **{'text-align': 'right'})
-    for c in left_cols:
-        if c in all_cols:
-            styled = styled.set_properties(subset=[c], **{'text-align': 'left'})
-    return styled
-
-
-def _df_height(n_rows):
-    """Altura en px para mostrar n_rows filas sin scroll (header + rows + borde)."""
-    return 38 * (n_rows + 1) + 4
+def _render_df(df, left_cols=('Activo',)):
+    """Renderiza un DataFrame como tabla HTML con alineación derecha en columnas numéricas."""
+    html = '<table class="ptable"><thead><tr>'
+    for col in df.columns:
+        a = 'l' if col in left_cols else 'r'
+        html += f'<th class="{a}">{col}</th>'
+    html += '</tr></thead><tbody>'
+    for _, row in df.iterrows():
+        html += '<tr>'
+        for col in df.columns:
+            a = 'l' if col in left_cols else 'r'
+            html += f'<td class="{a}">{row[col]}</td>'
+        html += '</tr>'
+    html += '</tbody></table>'
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def _metric(label, value_str, sub_str=None):
@@ -1287,8 +1283,7 @@ def main():
             'Amort/Cupones/Div':      _fmt_money(total_amort + total_cup + total_div, moneda),
             'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
         }])
-        st.dataframe(_right_align(summary_row, left_cols=()), use_container_width=True,
-                     hide_index=True, height=_df_height(1))
+        _render_df(summary_row, left_cols=())
 
         cols_display = [
             'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
@@ -1303,9 +1298,7 @@ def main():
         display_df['Cupones']        = display_df['Cupones'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Dividendos']     = display_df['Dividendos'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Ganancia Total'] = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
-        st.dataframe(_right_align(display_df), use_container_width=True, hide_index=True,
-                     height=_df_height(len(display_df)),
-                     column_config={"Activo": st.column_config.TextColumn("Activo", width="medium")})
+        _render_df(display_df)
 
         if '_nota' in portfolio_df.columns:
             for nota in portfolio_df[portfolio_df['_nota'] != '']['_nota']:
@@ -1368,8 +1361,7 @@ def main():
             'Ventas + Flujos': _fmt_money(flujos, moneda),
             'Ganancia Total':  f"{_fmt_money(total_gain, moneda)} {pct_str2}",
         }])
-        st.dataframe(_right_align(summary_evo, left_cols=()), use_container_width=True,
-                     hide_index=True, height=_df_height(1))
+        _render_df(summary_evo, left_cols=())
 
         evo_display = evolution_df.copy()
         evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
@@ -1379,9 +1371,7 @@ def main():
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
             else:
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
-        st.dataframe(_right_align(evo_display), use_container_width=True, hide_index=True,
-                     height=_df_height(len(evo_display)),
-                     column_config={"Activo": st.column_config.TextColumn("Activo", width="medium")})
+        _render_df(evo_display)
 
         # ── Tabla cash: cross-check por efectivo real ────────────────────────────
         # El "efectivo real" en una fecha = depósitos − retiros − compras + (ventas+amort+cup+div)
@@ -1460,8 +1450,7 @@ def main():
                 'Valor Final Cash':         _fmt_money(cash_fin, moneda),
                 'Ganancia Total':           f"{_fmt_money(ganancia_cash, moneda)} {pct_str_cash}",
             }])
-            st.dataframe(_right_align(summary_cash, left_cols=()), use_container_width=True,
-                         hide_index=True, height=_df_height(1))
+            _render_df(summary_cash, left_cols=())
 
         # ── Gráfico: Valor Total vs. Neto Invertido ───────────────────────────
         try:
@@ -1484,9 +1473,8 @@ def main():
             ff_g = pd.to_datetime(fecha_fin)
             price_dates_g = precios_g[(precios_g['Fecha'] >= fi_g) & (precios_g['Fecha'] <= ff_g)]['Fecha'].tolist()
             tx_dates_g    = ops_sorted_g[(ops_sorted_g['Fecha'] >= fi_g) & (ops_sorted_g['Fecha'] <= ff_g)]['Fecha'].tolist()
-            chart_dates_g = sorted(set(price_dates_g) | set(tx_dates_g))
-            if not chart_dates_g:
-                chart_dates_g = [fi_g, ff_g]
+            # Siempre incluir fi_g para que el primer punto coincida con "Valor al Inicio"
+            chart_dates_g = sorted(set(price_dates_g) | set(tx_dates_g) | {fi_g, ff_g})
 
             # Step function: holdings acumulados por activo
             cum_h_g = defaultdict(float)
