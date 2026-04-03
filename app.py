@@ -1071,14 +1071,18 @@ def _fmt_number(x):
 
 
 def _render_df(df, left_cols=('Activo',)):
-    """Renderiza un DataFrame como tabla HTML con alineación derecha en columnas numéricas."""
+    """Renderiza un DataFrame como tabla HTML con alineación derecha en columnas numéricas.
+    Si la última fila tiene 'Activo'=='TOTAL' se renderiza en negrita con fondo gris."""
     html = '<table class="ptable"><thead><tr>'
     for col in df.columns:
         a = 'l' if col in left_cols else 'r'
         html += f'<th class="{a}">{col}</th>'
     html += '</tr></thead><tbody>'
-    for _, row in df.iterrows():
-        html += '<tr>'
+    rows = list(df.iterrows())
+    for i, (_, row) in enumerate(rows):
+        is_total = (i == len(rows) - 1 and str(row.get('Activo', '')).strip() == 'TOTAL')
+        row_style = ' style="background:#F0F2F6;font-weight:700;border-top:2px solid #CBD5E1;"' if is_total else ''
+        html += f'<tr{row_style}>'
         for col in df.columns:
             a = 'l' if col in left_cols else 'r'
             html += f'<td class="{a}">{row[col]}</td>'
@@ -1223,35 +1227,30 @@ def main():
         total_ganancia = total_ganancia_r + total_ganancia_no_r
         pct_total      = (total_ganancia / total_costo * 100) if total_costo > 0 else 0
         pct_str        = f"{'▼' if pct_total < 0 else '▲'} {abs(pct_total):.1f}%"
-        c1, c2, c3, c4 = st.columns(4)
-        with c1: _metric("Valor de Mercado",  _fmt_money(total_valor_mercado, moneda))
-        with c2: _metric("Costo Total",        _fmt_money(total_costo, moneda))
-        with c3: _metric("Amort / Cup / Div",  _fmt_money(total_amort + total_cup + total_div, moneda))
-        with c4: _metric("Ganancia Total",      _fmt_money(total_ganancia, moneda), sub_str=pct_str)
+        c1, = st.columns(1)
+        with c1: _metric("Valor de Mercado", _fmt_money(total_valor_mercado, moneda))
         st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
 
-        # ── % cambio diario y mensual por activo desde tabla de precios ──────
+        # ── Diferencia diaria y mensual por activo (en valor, no %) ──────────
         precios_hist = precios.copy()
         precios_hist['Fecha'] = pd.to_datetime(precios_hist['Fecha'])
         hoy = pd.Timestamp(fecha_actual)
         inicio_mes = hoy.replace(day=1)
 
-        def _pct_diario(asset):
+        def _diff_diaria(asset, nom):
             ap = precios_hist[precios_hist['Activo'] == asset].sort_values('Fecha')
-            # precio actual (último disponible ≤ hoy)
             r_hoy = ap[ap['Fecha'] <= hoy]
             if r_hoy.empty:
                 return np.nan
             p_hoy = float(r_hoy.iloc[-1]['Precio'])
-            # precio del día anterior (último antes del último precio disponible)
             fecha_hoy_precio = r_hoy.iloc[-1]['Fecha']
             r_prev = ap[ap['Fecha'] < fecha_hoy_precio]
             if r_prev.empty:
                 return np.nan
             p_prev = float(r_prev.iloc[-1]['Precio'])
-            return (p_hoy - p_prev) / p_prev * 100 if p_prev else np.nan
+            return (p_hoy - p_prev) * nom
 
-        def _pct_mes(asset):
+        def _diff_mensual(asset, nom):
             ap = precios_hist[precios_hist['Activo'] == asset].sort_values('Fecha')
             r_hoy = ap[ap['Fecha'] <= hoy]
             if r_hoy.empty:
@@ -1261,13 +1260,13 @@ def main():
             if r_mes.empty:
                 return np.nan
             p_mes = float(r_mes.iloc[-1]['Precio'])
-            return (p_hoy - p_mes) / p_mes * 100 if p_mes else np.nan
+            return (p_hoy - p_mes) * nom
 
-        def _fmt_pct(x):
-            if not pd.notna(x):
+        def _fmt_diff(x):
+            if not pd.notna(x) or x == 0:
                 return '-'
             arrow = '▼' if x < 0 else '▲'
-            return f"{arrow} {abs(x):.2f}%"
+            return f"{arrow} {_fmt_money(abs(x), moneda)}"
 
         cols_display = [
             'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
@@ -1279,31 +1278,54 @@ def main():
         # Unificar Amortizaciones + Cupones + Dividendos
         display_df['Amort / Cup / Div'] = display_df['Amortizaciones'] + display_df['Cupones'] + display_df['Dividendos']
 
-        # Calcular % diario y mensual (numérico, antes de formatear)
-        display_df['% Día']  = display_df['Activo'].apply(_pct_diario)
-        display_df['% Mes']  = display_df['Activo'].apply(_pct_mes)
+        # Diferencia en valor = (precio_hoy - precio_ref) × nominales
+        nom_raw = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'}) \
+                      .sort_values('Nominales', ascending=False).reset_index(drop=True)['Nominales']
+        display_df['_nom'] = nom_raw.values
+        display_df['Dif. Diaria'] = display_df.apply(lambda r: _diff_diaria(r['Activo'], r['_nom']), axis=1)
+        display_df['Dif. Mensual'] = display_df.apply(lambda r: _diff_mensual(r['Activo'], r['_nom']), axis=1)
 
-        display_df['Nominales']        = display_df['Nominales'].apply(_fmt_number)
-        display_df['Precio Actual']    = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
-        display_df['Valor Actual']     = display_df['Valor Actual'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Costo']            = display_df['Costo'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Amort / Cup / Div']= display_df['Amort / Cup / Div'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Ganancia Total']   = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['% Día']            = display_df['% Día'].apply(_fmt_pct)
-        display_df['% Mes']            = display_df['% Mes'].apply(_fmt_pct)
+        # Totales (numéricos antes de formatear)
+        tot_valor_actual    = display_df['Valor Actual'].sum()
+        tot_costo           = display_df['Costo'].sum()
+        tot_amort           = display_df['Amort / Cup / Div'].sum()
+        tot_dif_dia         = display_df['Dif. Diaria'].sum()
+        tot_dif_mes         = display_df['Dif. Mensual'].sum()
+        tot_ganancia        = display_df['Ganancia Total'].sum()
+
+        # Formatear columnas
+        display_df['Nominales']         = display_df['Nominales'].apply(_fmt_number)
+        display_df['Precio Actual']     = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
+        display_df['Valor Actual']      = display_df['Valor Actual'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Costo']             = display_df['Costo'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Amort / Cup / Div'] = display_df['Amort / Cup / Div'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Ganancia Total']    = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Dif. Diaria']       = display_df['Dif. Diaria'].apply(_fmt_diff)
+        display_df['Dif. Mensual']      = display_df['Dif. Mensual'].apply(_fmt_diff)
 
         final_cols = ['Activo', 'Nominales', 'Precio Actual', 'Valor Actual',
-                      'Costo', 'Amort / Cup / Div', '% Día', '% Mes', 'Ganancia Total']
-        _render_df(display_df[final_cols])
+                      'Costo', 'Amort / Cup / Div', 'Dif. Diaria', 'Dif. Mensual', 'Ganancia Total']
+        display_df = display_df[final_cols]
+
+        # Fila total
+        total_row = pd.DataFrame([{
+            'Activo':           'TOTAL',
+            'Nominales':        '-',
+            'Precio Actual':    '-',
+            'Valor Actual':     _fmt_money(tot_valor_actual, moneda),
+            'Costo':            _fmt_money(tot_costo, moneda),
+            'Amort / Cup / Div':_fmt_money(tot_amort, moneda),
+            'Dif. Diaria':      _fmt_diff(tot_dif_dia),
+            'Dif. Mensual':     _fmt_diff(tot_dif_mes),
+            'Ganancia Total':   _fmt_money(tot_ganancia, moneda),
+        }])
+        display_df = pd.concat([display_df, total_row], ignore_index=True)
+
+        _render_df(display_df)
 
         if '_nota' in portfolio_df.columns:
             for nota in portfolio_df[portfolio_df['_nota'] != '']['_nota']:
                 st.caption(nota)
-        st.caption(
-            "ℹ️ Amortizaciones, Cupones y Dividendos corresponden únicamente a los flujos "
-            "cobrados desde la apertura de la posición actual. Los flujos de posiciones "
-            "anteriores del mismo activo (antes del último reset) se reflejan en la Sección 2."
-        )
 
     # ══════════════════════════════════════════
     # SECCIÓN 2 – EVOLUCIÓN HISTÓRICA
