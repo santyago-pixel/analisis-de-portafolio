@@ -1106,7 +1106,7 @@ def _metric(label, value_str, sub_str=None):
         )
 
     st.markdown(
-        f'<div style="background:#FFFFFF;border-radius:10px;padding:1rem 1.1rem 0.9rem;border:1px solid #E5E7EB;box-shadow:0 1px 4px rgba(0,0,0,0.06);min-height:90px;">'
+        f'<div style="background:#FFFFFF;border-radius:10px;padding:1rem 1.1rem 0.9rem;border:1px solid #E5E7EB;box-shadow:0 1px 4px rgba(0,0,0,0.06);height:90px;">'
         f'<div style="font-size:0.68rem;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.55px;margin-bottom:6px;">{label}</div>'
         f'<div style="font-size:1.25rem;font-weight:700;color:#1B2333;line-height:1.25;word-break:break-word;">{value_str}</div>'
         f'{delta_html}'
@@ -1228,6 +1228,7 @@ def main():
         with c2: _metric("Costo Total",        _fmt_money(total_costo, moneda))
         with c3: _metric("Amort / Cup / Div",  _fmt_money(total_amort + total_cup + total_div, moneda))
         with c4: _metric("Ganancia Total",      _fmt_money(total_ganancia, moneda), sub_str=pct_str)
+        st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
 
         cols_display = [
             'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
@@ -1298,6 +1299,7 @@ def main():
         with e3: _metric("Compras",          _fmt_money(evolution_df['Compras'].sum(), moneda))
         with e4: _metric("Ventas + Flujos",  _fmt_money(flujos, moneda))
         with e5: _metric("Ganancia Total",   _fmt_money(total_gain, moneda))
+        st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
 
         evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True)[
             ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
