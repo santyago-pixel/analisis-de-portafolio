@@ -1472,16 +1472,23 @@ def main():
             ]['Fecha'].unique().tolist()
             chart_dates_g = sorted({pd.Timestamp(d) for d in price_dates_g} | {fi_g, ff_g})
 
-            # ── Estado por activo: holdings y costo acumulado ──────────────────
-            # Misma lógica que calculate_portfolio_evolution:
-            # - _find_last_reset con ops ANTES de fi_g
-            # - amortizaciones reducen nominales (si Cantidad > 0)
-            # - primer punto usa ops ESTRICTAMENTE < fi_g (igual que "Valor al Inicio")
+            # ── Construir la serie temporal del gráfico ────────────────────────
+            # Lógica:
+            # "Valor al Inicio" arranca en fi_g = sum(nom_inicio × precio_inicio)
+            #   y es una step function que cambia solo con flujos en el período:
+            #   + Compras (nuevo capital invertido)
+            #   - Ventas (capital desinvertido)
+            #   - Amort / Cupones / Dividendos (capital devuelto)
+            # "Valor Total" = sum(nom_actual × precio_actual) en cada fecha.
+            # En fi_g ambas líneas coinciden (= Valor al Inicio de la tabla).
+
             all_ops_g = operaciones.copy()
             all_ops_g['Fecha'] = pd.to_datetime(all_ops_g['Fecha'])
             assets_g = [a for a in all_ops_g['Activo'].dropna().unique() if pd.notna(a)]
 
-            asset_state_dfs = {}  # asset -> DataFrame(Fecha, Nom, Cost)
+            # ── Paso 1: nom_inicio y precio_inicio por activo (igual que tabla) ─
+            valor_inicio_total = 0.0
+            nom_inicio_g = {}  # asset -> nominales en fi_g (ops < fi_g)
             for asset in assets_g:
                 aops = all_ops_g[all_ops_g['Activo'] == asset].sort_values('Fecha')
                 ops_before = aops[aops['Fecha'] < fi_g]
@@ -1489,50 +1496,99 @@ def main():
                 if last_reset_pos >= 0:
                     reset_idx = ops_before.index[last_reset_pos]
                     ops_from_reset = aops[aops.index > reset_idx]
+                    ops_until_inicio = ops_from_reset[ops_from_reset['Fecha'] < fi_g]
                 else:
-                    ops_from_reset = aops
+                    ops_until_inicio = ops_before
 
                 nom = 0.0
-                cpu = 0.0  # costo promedio por unidad
-                steps = []
-                for _, op in ops_from_reset.iterrows():
+                for _, op in ops_until_inicio.iterrows():
                     tipo = str(op['Tipo']).strip()
                     qty  = float(op.get('Cantidad', 0) or 0)
-                    monto = _get_monto(op, moneda, fx_rates)
                     if tipo == 'Compra':
-                        new_nom = nom + qty
-                        cpu = ((nom * cpu) + monto) / new_nom if new_nom > 0 else 0.0
-                        nom = new_nom
+                        nom += qty
                     elif tipo == 'Venta':
                         nom = max(nom - qty, 0.0)
                     elif _clasificar_operacion(tipo) == 'amortizacion' and pd.notna(op.get('Cantidad')) and qty > 0:
                         nom = max(nom - qty, 0.0)
-                    steps.append((op['Fecha'], nom, nom * cpu))
+                nom_inicio_g[asset] = nom
 
-                if steps:
-                    asset_state_dfs[asset] = pd.DataFrame(steps, columns=['Fecha', 'Nom', 'Cost'])
+                if nom > 0:
+                    ap = precios_g[
+                        (precios_g['Activo'] == asset) & (precios_g['Fecha'] <= fi_g)
+                    ]
+                    if not ap.empty:
+                        p = float(ap.iloc[-1]['Precio'])
+                        if moneda == 'ARS':
+                            p *= _get_fx(fx_rates, fi_g)
+                        valor_inicio_total += nom * p
 
-            def _state_at(asset, d, strict=False):
-                """Devuelve (nominales, costo_total) del activo en fecha d."""
-                df = asset_state_dfs.get(asset)
+            # ── Paso 2: step function de "Valor al Inicio" post fi_g ─────────
+            # Flujos en el período: compras suman, ventas/flujos restan
+            ops_en_periodo_g = all_ops_g[
+                (all_ops_g['Fecha'] >= fi_g) & (all_ops_g['Fecha'] <= ff_g)
+            ].sort_values('Fecha')
+
+            flujo_steps = []  # (Fecha, delta_capital)
+            for _, op in ops_en_periodo_g.iterrows():
+                tipo  = str(op['Tipo']).strip()
+                monto = _get_monto(op, moneda, fx_rates)
+                cat   = _clasificar_operacion(tipo)
+                if tipo == 'Compra':
+                    flujo_steps.append((op['Fecha'], +monto))
+                elif tipo == 'Venta':
+                    flujo_steps.append((op['Fecha'], -monto))
+                elif cat in ('amortizacion', 'cupon', 'dividendo'):
+                    flujo_steps.append((op['Fecha'], -monto))
+
+            # Step function acumulada de flujos
+            flujo_cum = {}
+            acc = 0.0
+            for fecha_f, delta in flujo_steps:
+                acc += delta
+                flujo_cum[fecha_f] = acc
+
+            def _vi_at(d):
+                """Valor al Inicio acumulado hasta fecha d (inclusive)."""
+                acc_vi = 0.0
+                for fd, delta in flujo_steps:
+                    if fd <= d:
+                        acc_vi += delta
+                return valor_inicio_total + acc_vi
+
+            # ── Paso 3: holdings actuales por activo en cada fecha ───────────
+            # Arranca desde nom_inicio_g y acumula ops en el período
+            asset_nom_steps = {}  # asset -> list of (Fecha, nom)
+            for asset in assets_g:
+                nom = nom_inicio_g.get(asset, 0.0)
+                steps = [(fi_g, nom)]  # estado en fi_g
+                aops_period = ops_en_periodo_g[ops_en_periodo_g['Activo'] == asset]
+                for _, op in aops_period.iterrows():
+                    tipo = str(op['Tipo']).strip()
+                    qty  = float(op.get('Cantidad', 0) or 0)
+                    if tipo == 'Compra':
+                        nom += qty
+                    elif tipo == 'Venta':
+                        nom = max(nom - qty, 0.0)
+                    elif _clasificar_operacion(tipo) == 'amortizacion' and pd.notna(op.get('Cantidad')) and qty > 0:
+                        nom = max(nom - qty, 0.0)
+                    steps.append((op['Fecha'], nom))
+                asset_nom_steps[asset] = pd.DataFrame(steps, columns=['Fecha', 'Nom']) \
+                                           .set_index('Fecha').groupby(level=0).last()
+
+            def _nom_at(asset, d):
+                df = asset_nom_steps.get(asset)
                 if df is None or df.empty:
-                    return 0.0, 0.0
-                r = df[df['Fecha'] < d] if strict else df[df['Fecha'] <= d]
-                if r.empty:
-                    return 0.0, 0.0
-                last = r.iloc[-1]
-                return float(last['Nom']), float(last['Cost'])
+                    return 0.0
+                r = df[df.index <= d]
+                return float(r.iloc[-1]['Nom']) if not r.empty else 0.0
 
-            # ── Construir serie temporal ───────────────────────────────────────
-            ni_has_data = False
+            # ── Paso 4: construir serie temporal ─────────────────────────────
             chart_rows_g = []
             for d in chart_dates_g:
                 d = pd.Timestamp(d)
-                strict = (d == fi_g)  # primer punto: ops < fi_g → iguala "Valor al Inicio"
                 bv = 0.0
-                ni = 0.0
                 for asset in assets_g:
-                    nom, cost = _state_at(asset, d, strict=strict)
+                    nom = _nom_at(asset, d)
                     if nom > 0:
                         ap = precios_g[
                             (precios_g['Activo'] == asset) & (precios_g['Fecha'] <= d)
@@ -1542,34 +1598,28 @@ def main():
                             if moneda == 'ARS':
                                 price *= _get_fx(fx_rates, d)
                             bv += nom * price
-                            ni += cost
-                            if cost > 0:
-                                ni_has_data = True
                 chart_rows_g.append({
                     'Fecha':          d,
                     'Valor Total':    bv,
-                    'Neto Invertido': ni,
+                    'Valor al Inicio': _vi_at(d),
                 })
 
-            ni_steps_g = ni_has_data  # alias para la lógica del trace
+            ni_steps_g = True  # siempre mostrar ambas líneas
 
             df_chart = pd.DataFrame(chart_rows_g)
             lbl_y = 'ARS' if moneda == 'ARS' else 'USD'
 
             fig = go.Figure()
-            if ni_steps_g:  # solo mostrar Neto Invertido si hay datos de depósitos/retiros
-                fig.add_trace(go.Scatter(
-                    x=df_chart['Fecha'], y=df_chart['Neto Invertido'],
-                    fill='tozeroy', name='Neto Invertido',
-                    mode='lines', line=dict(color='#93C5FD', width=1.5),
-                    fillcolor='rgba(147, 197, 253, 0.25)',
-                ))
+            fig.add_trace(go.Scatter(
+                x=df_chart['Fecha'], y=df_chart['Valor al Inicio'],
+                fill='tozeroy', name='Valor al Inicio',
+                mode='lines', line=dict(color='#93C5FD', width=1.5),
+                fillcolor='rgba(147, 197, 253, 0.25)',
+            ))
             fig.add_trace(go.Scatter(
                 x=df_chart['Fecha'], y=df_chart['Valor Total'],
-                name='Valor Total (tít+cash)',
+                name='Valor Total',
                 mode='lines', line=dict(color='#1A4B9B', width=2.5),
-                fill='tozeroy' if not ni_steps_g else None,
-                fillcolor='rgba(26, 75, 155, 0.15)' if not ni_steps_g else None,
             ))
             fig.update_layout(
                 hovermode='x unified',
