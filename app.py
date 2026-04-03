@@ -1396,8 +1396,23 @@ def main():
             tot_neto = tot_comp - tot_ven
 
             if with_diffs:
-                evo_disp['Dif. Diaria']  = evo_disp.apply(lambda r: _dif_dia_nom(r['Activo'], r['Nominales']), axis=1)
-                evo_disp['Dif. Mensual'] = evo_disp.apply(lambda r: _dif_mes_nom(r['Activo'], r['Nominales']), axis=1)
+                evo_disp['Dif. Diaria']  = evo_disp.apply(
+                    lambda r: _dif_dia_nom(r['Activo'], r['Nominales']), axis=1
+                )
+                # Dif. Mensual = P&L real del período (precio ponderado por timing de cada lote):
+                # Valor Actual − Valor al Inicio − Flujos netos del activo
+                # Para activos existentes: gana sobre pos. original + gana sobre compras desde adquisición
+                # Para activos nuevos:     gana desde precio de compra (Flujos neto = 0)
+                flujos_neto_activo = (
+                    evo_disp['Compras Adicionales']
+                    - evo_disp['Ventas']
+                    - evo_disp['Amort / Cup / Div']
+                )
+                evo_disp['Dif. Mensual'] = (
+                    evo_disp['Valor Actual']
+                    - evo_disp['Valor al Inicio']
+                    - flujos_neto_activo
+                )
                 tot_dif_dia = evo_disp['Dif. Diaria'].sum()
                 tot_dif_mes = evo_disp['Dif. Mensual'].sum()
                 # Cards: Flujos = compras adicionales (sobre posición pre-existente) − ventas − amort
