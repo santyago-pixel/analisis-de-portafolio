@@ -1453,10 +1453,6 @@ def main():
 
         # ── Gráfico: Valor Total vs. Neto Invertido ───────────────────────────
         try:
-            from collections import defaultdict
-
-            ops_sorted_g = ops_cash.dropna(subset=['Fecha']).sort_values('Fecha')
-
             # Precios enriquecidos con live prices
             precios_g = precios.copy()
             if live_prices:
@@ -1467,123 +1463,95 @@ def main():
                     precios_g = pd.concat([precios_g, pd.DataFrame(rows_live)]) \
                                   .drop_duplicates(subset=['Activo', 'Fecha'], keep='last')
 
-            # Fechas del gráfico: union precios + transacciones en el rango
             fi_g = pd.to_datetime(fecha_inicio)
             ff_g = pd.to_datetime(fecha_fin)
-            price_dates_g = precios_g[(precios_g['Fecha'] >= fi_g) & (precios_g['Fecha'] <= ff_g)]['Fecha'].tolist()
-            tx_dates_g    = ops_sorted_g[(ops_sorted_g['Fecha'] >= fi_g) & (ops_sorted_g['Fecha'] <= ff_g)]['Fecha'].tolist()
-            # Siempre incluir fi_g para que el primer punto coincida con "Valor al Inicio"
-            chart_dates_g = sorted(set(price_dates_g) | set(tx_dates_g) | {fi_g, ff_g})
 
-            # Step function: holdings acumulados por activo
-            cum_h_g = defaultdict(float)
-            h_steps_g = defaultdict(list)
-            for _, row in ops_sorted_g.iterrows():
-                tipo = row.get('Tipo', np.nan)
-                asset = row.get('Activo', np.nan)
-                if pd.isna(tipo) or pd.isna(asset):
-                    continue
-                t = str(tipo).strip()
-                qty = float(row.get('Cantidad', 0) or 0)
-                if t == 'Compra':
-                    cum_h_g[asset] += qty
-                elif t == 'Venta':
-                    cum_h_g[asset] -= qty
-                h_steps_g[asset].append((row['Fecha'], cum_h_g[asset]))
+            # Fechas del gráfico: fechas con precios en el rango + extremos
+            price_dates_g = precios_g[
+                (precios_g['Fecha'] >= fi_g) & (precios_g['Fecha'] <= ff_g)
+            ]['Fecha'].unique().tolist()
+            chart_dates_g = sorted({pd.Timestamp(d) for d in price_dates_g} | {fi_g, ff_g})
 
-            h_dfs_g = {
-                a: pd.DataFrame(steps, columns=['Fecha', 'H'])
-                         .set_index('Fecha').groupby(level=0).last()
-                for a, steps in h_steps_g.items()
-            }
+            # ── Estado por activo: holdings y costo acumulado ──────────────────
+            # Misma lógica que calculate_portfolio_evolution:
+            # - _find_last_reset con ops ANTES de fi_g
+            # - amortizaciones reducen nominales (si Cantidad > 0)
+            # - primer punto usa ops ESTRICTAMENTE < fi_g (igual que "Valor al Inicio")
+            all_ops_g = operaciones.copy()
+            all_ops_g['Fecha'] = pd.to_datetime(all_ops_g['Fecha'])
+            assets_g = [a for a in all_ops_g['Activo'].dropna().unique() if pd.notna(a)]
 
-            def _h_at(asset, d):
-                df = h_dfs_g.get(asset)
-                if df is None or df.empty:
-                    return 0.0
-                r = df[df.index <= d]
-                return float(r.iloc[-1]['H']) if not r.empty else 0.0
-
-            # Step function: cash acumulado
-            cash_cum_g = 0.0
-            cash_steps_g = []
-            for _, row in ops_sorted_g.iterrows():
-                d = row['Fecha']
-                if pd.isna(d):
-                    continue
-                fx = _get_fx(fx_rates, d) if moneda == 'ARS' else 1.0
-                dep = float(row[col_dep]) if has_cash and col_dep and pd.notna(row.get(col_dep, np.nan)) else 0.0
-                ret = float(row[col_ret]) if has_cash and col_ret and pd.notna(row.get(col_ret, np.nan)) else 0.0
-                cash_cum_g += (dep - ret) * fx
-                tipo = row.get('Tipo', np.nan)
-                if pd.notna(tipo):
-                    monto = _get_monto(row, moneda, fx_rates)
-                    cash_cum_g += -monto if str(tipo).strip() == 'Compra' else monto
-                cash_steps_g.append((d, cash_cum_g))
-
-            cash_sdf_g = (pd.DataFrame(cash_steps_g, columns=['Fecha', 'Cash'])
-                            .set_index('Fecha').groupby(level=0).last()
-                          if cash_steps_g else pd.DataFrame(columns=['Cash']))
-
-            def _cash_at_g(d):
-                if cash_sdf_g.empty:
-                    return 0.0
-                r = cash_sdf_g[cash_sdf_g.index <= d]
-                return float(r.iloc[-1]['Cash']) if not r.empty else 0.0
-
-            # Step function: neto invertido
-            # Si hay columnas de depósito/retiro: depósitos − retiros acumulados.
-            # Si no (modo Resumen): costo acumulado de compras − ventas (Monto ARS).
-            ni_cum_g = 0.0
-            ni_steps_g = []
-            for _, row in ops_sorted_g.iterrows():
-                d = row['Fecha']
-                if pd.isna(d):
-                    continue
-                if has_cash:
-                    dep = float(row[col_dep]) if pd.notna(row.get(col_dep, np.nan)) else 0.0
-                    ret = float(row[col_ret]) if pd.notna(row.get(col_ret, np.nan)) else 0.0
-                    if dep != 0 or ret != 0:
-                        fx = _get_fx(fx_rates, d) if moneda == 'ARS' else 1.0
-                        ni_cum_g += (dep - ret) * fx
-                        ni_steps_g.append((d, ni_cum_g))
+            asset_state_dfs = {}  # asset -> DataFrame(Fecha, Nom, Cost)
+            for asset in assets_g:
+                aops = all_ops_g[all_ops_g['Activo'] == asset].sort_values('Fecha')
+                ops_before = aops[aops['Fecha'] < fi_g]
+                _, last_reset_pos = _find_last_reset(ops_before)
+                if last_reset_pos >= 0:
+                    reset_idx = ops_before.index[last_reset_pos]
+                    ops_from_reset = aops[aops.index > reset_idx]
                 else:
-                    tipo = str(row.get('Tipo', '')).strip()
-                    if tipo in ('Compra', 'Venta'):
-                        monto = _get_monto(row, moneda, fx_rates)
-                        ni_cum_g += monto if tipo == 'Compra' else -monto
-                        ni_steps_g.append((d, ni_cum_g))
+                    ops_from_reset = aops
 
-            ni_sdf_g = (pd.DataFrame(ni_steps_g, columns=['Fecha', 'NI'])
-                          .set_index('Fecha').groupby(level=0).last()
-                        if ni_steps_g else pd.DataFrame(columns=['NI']))
+                nom = 0.0
+                cpu = 0.0  # costo promedio por unidad
+                steps = []
+                for _, op in ops_from_reset.iterrows():
+                    tipo = str(op['Tipo']).strip()
+                    qty  = float(op.get('Cantidad', 0) or 0)
+                    monto = _get_monto(op, moneda, fx_rates)
+                    if tipo == 'Compra':
+                        new_nom = nom + qty
+                        cpu = ((nom * cpu) + monto) / new_nom if new_nom > 0 else 0.0
+                        nom = new_nom
+                    elif tipo == 'Venta':
+                        nom = max(nom - qty, 0.0)
+                    elif _clasificar_operacion(tipo) == 'amortizacion' and pd.notna(op.get('Cantidad')) and qty > 0:
+                        nom = max(nom - qty, 0.0)
+                    steps.append((op['Fecha'], nom, nom * cpu))
 
-            def _ni_at_g(d):
-                if ni_sdf_g.empty:
-                    return 0.0
-                r = ni_sdf_g[ni_sdf_g.index <= d]
-                return float(r.iloc[-1]['NI']) if not r.empty else 0.0
+                if steps:
+                    asset_state_dfs[asset] = pd.DataFrame(steps, columns=['Fecha', 'Nom', 'Cost'])
 
-            # Construir serie temporal
-            assets_g = [a for a in ops_cash['Activo'].dropna().unique() if pd.notna(a)]
+            def _state_at(asset, d, strict=False):
+                """Devuelve (nominales, costo_total) del activo en fecha d."""
+                df = asset_state_dfs.get(asset)
+                if df is None or df.empty:
+                    return 0.0, 0.0
+                r = df[df['Fecha'] < d] if strict else df[df['Fecha'] <= d]
+                if r.empty:
+                    return 0.0, 0.0
+                last = r.iloc[-1]
+                return float(last['Nom']), float(last['Cost'])
+
+            # ── Construir serie temporal ───────────────────────────────────────
+            ni_has_data = False
             chart_rows_g = []
             for d in chart_dates_g:
-                d = pd.Timestamp(d)  # normalizar tipo para comparaciones seguras
+                d = pd.Timestamp(d)
+                strict = (d == fi_g)  # primer punto: ops < fi_g → iguala "Valor al Inicio"
                 bv = 0.0
+                ni = 0.0
                 for asset in assets_g:
-                    h = _h_at(asset, d)
-                    if h > 0:
-                        ap = precios_g[(precios_g['Activo'] == asset) & (precios_g['Fecha'] <= d)]
+                    nom, cost = _state_at(asset, d, strict=strict)
+                    if nom > 0:
+                        ap = precios_g[
+                            (precios_g['Activo'] == asset) & (precios_g['Fecha'] <= d)
+                        ]
                         if not ap.empty:
                             price = float(ap.iloc[-1]['Precio'])
                             if moneda == 'ARS':
                                 price *= _get_fx(fx_rates, d)
-                            bv += h * price
+                            bv += nom * price
+                            ni += cost
+                            if cost > 0:
+                                ni_has_data = True
                 chart_rows_g.append({
                     'Fecha':          d,
-                    'Valor Total':    bv + _cash_at_g(d),
-                    'Neto Invertido': _ni_at_g(d),
+                    'Valor Total':    bv,
+                    'Neto Invertido': ni,
                 })
+
+            ni_steps_g = ni_has_data  # alias para la lógica del trace
 
             df_chart = pd.DataFrame(chart_rows_g)
             lbl_y = 'ARS' if moneda == 'ARS' else 'USD'
