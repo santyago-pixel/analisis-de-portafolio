@@ -1106,20 +1106,11 @@ def _metric(label, value_str, sub_str=None):
         )
 
     st.markdown(
-        f'''<div style="
-                background:#FFFFFF;
-                border-radius:10px;
-                padding:1rem 1.1rem 0.9rem;
-                border:1px solid #E5E7EB;
-                box-shadow:0 1px 4px rgba(0,0,0,0.06);
-                min-height:90px;">
-            <div style="font-size:0.68rem;font-weight:600;color:#6B7280;
-                        text-transform:uppercase;letter-spacing:0.55px;
-                        margin-bottom:6px;">{label}</div>
-            <div style="font-size:1.25rem;font-weight:700;color:#1B2333;
-                        line-height:1.25;word-break:break-word;">{value_str}</div>
-            {delta_html}
-        </div>''',
+        f'<div style="background:#FFFFFF;border-radius:10px;padding:1rem 1.1rem 0.9rem;border:1px solid #E5E7EB;box-shadow:0 1px 4px rgba(0,0,0,0.06);min-height:90px;">'
+        f'<div style="font-size:0.68rem;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.55px;margin-bottom:6px;">{label}</div>'
+        f'<div style="font-size:1.25rem;font-weight:700;color:#1B2333;line-height:1.25;word-break:break-word;">{value_str}</div>'
+        f'{delta_html}'
+        f'</div>',
         unsafe_allow_html=True
     )
 
