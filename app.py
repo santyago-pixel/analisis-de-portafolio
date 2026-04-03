@@ -1510,6 +1510,8 @@ def main():
                           if cash_steps_g else pd.DataFrame(columns=['Cash']))
 
             def _cash_at_g(d):
+                if cash_sdf_g.empty:
+                    return 0.0
                 r = cash_sdf_g[cash_sdf_g.index <= d]
                 return float(r.iloc[-1]['Cash']) if not r.empty else 0.0
 
@@ -1532,6 +1534,8 @@ def main():
                         if ni_steps_g else pd.DataFrame(columns=['NI']))
 
             def _ni_at_g(d):
+                if ni_sdf_g.empty:
+                    return 0.0
                 r = ni_sdf_g[ni_sdf_g.index <= d]
                 return float(r.iloc[-1]['NI']) if not r.empty else 0.0
 
