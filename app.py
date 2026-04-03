@@ -1024,9 +1024,10 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo,
 
         st.markdown(f"**Operaciones detalladas para {activo}:**")
         st.dataframe(
-            display,
+            _right_align(display, left_cols=('Fecha', 'Operación')),
             use_container_width=True,
             hide_index=True,
+            height=_df_height(len(display)),
             column_config={
                 "Fecha":     st.column_config.TextColumn("Fecha",     width="small"),
                 "Operación": st.column_config.TextColumn("Operación", width="medium"),
@@ -1055,9 +1056,12 @@ def _fmt_money(x, moneda='USD'):
 
     USD: dos decimales (ej: $1,234.56)
     ARS: sin decimales porque los valores en pesos son grandes (ej: $1,234,567)
+    Cero: muestra "-"
     """
     if not pd.notna(x):
-        return ""
+        return "-"
+    if x == 0:
+        return "-"
     if moneda == 'ARS':
         return f"${x:,.0f}"
     return f"${x:,.2f}"
@@ -1065,13 +1069,33 @@ def _fmt_money(x, moneda='USD'):
 
 def _fmt_price(x, moneda='USD'):
     """Formatea un precio según la moneda (ambos con 2 decimales)."""
-    if not pd.notna(x):
-        return ""
+    if not pd.notna(x) or x == 0:
+        return "-"
     return f"${x:,.2f}"
 
 
 def _fmt_number(x):
-    return f"{x:,.0f}" if pd.notna(x) else ""
+    if not pd.notna(x) or x == 0:
+        return "-"
+    return f"{x:,.0f}"
+
+
+def _right_align(df, left_cols=('Activo',)):
+    """Aplica alineación derecha a todas las columnas excepto las indicadas en left_cols."""
+    all_cols = df.columns.tolist()
+    right_cols = [c for c in all_cols if c not in left_cols]
+    styled = df.style
+    if right_cols:
+        styled = styled.set_properties(subset=right_cols, **{'text-align': 'right'})
+    for c in left_cols:
+        if c in all_cols:
+            styled = styled.set_properties(subset=[c], **{'text-align': 'left'})
+    return styled
+
+
+def _df_height(n_rows):
+    """Altura en px para mostrar n_rows filas sin scroll (header + rows + borde)."""
+    return 38 * (n_rows + 1) + 4
 
 
 def _metric(label, value_str, sub_str=None):
@@ -1263,7 +1287,8 @@ def main():
             'Amort/Cupones/Div':      _fmt_money(total_amort + total_cup + total_div, moneda),
             'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
         }])
-        st.dataframe(summary_row, use_container_width=True, hide_index=True)
+        st.dataframe(_right_align(summary_row, left_cols=()), use_container_width=True,
+                     hide_index=True, height=_df_height(1))
 
         cols_display = [
             'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
@@ -1278,7 +1303,8 @@ def main():
         display_df['Cupones']        = display_df['Cupones'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Dividendos']     = display_df['Dividendos'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Ganancia Total'] = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
-        st.dataframe(display_df, use_container_width=True, hide_index=True,
+        st.dataframe(_right_align(display_df), use_container_width=True, hide_index=True,
+                     height=_df_height(len(display_df)),
                      column_config={"Activo": st.column_config.TextColumn("Activo", width="medium")})
 
         if '_nota' in portfolio_df.columns:
@@ -1342,7 +1368,8 @@ def main():
             'Ventas + Flujos': _fmt_money(flujos, moneda),
             'Ganancia Total':  f"{_fmt_money(total_gain, moneda)} {pct_str2}",
         }])
-        st.dataframe(summary_evo, use_container_width=True, hide_index=True)
+        st.dataframe(_right_align(summary_evo, left_cols=()), use_container_width=True,
+                     hide_index=True, height=_df_height(1))
 
         evo_display = evolution_df.copy()
         evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
@@ -1352,7 +1379,8 @@ def main():
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
             else:
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
-        st.dataframe(evo_display, use_container_width=True, hide_index=True,
+        st.dataframe(_right_align(evo_display), use_container_width=True, hide_index=True,
+                     height=_df_height(len(evo_display)),
                      column_config={"Activo": st.column_config.TextColumn("Activo", width="medium")})
 
         # ── Tabla cash: cross-check por efectivo real ────────────────────────────
@@ -1432,7 +1460,8 @@ def main():
                 'Valor Final Cash':         _fmt_money(cash_fin, moneda),
                 'Ganancia Total':           f"{_fmt_money(ganancia_cash, moneda)} {pct_str_cash}",
             }])
-            st.dataframe(summary_cash, use_container_width=True, hide_index=True)
+            st.dataframe(_right_align(summary_cash, left_cols=()), use_container_width=True,
+                         hide_index=True, height=_df_height(1))
 
         # ── Gráfico: Valor Total vs. Neto Invertido ───────────────────────────
         try:
@@ -1564,16 +1593,19 @@ def main():
             lbl_y = 'ARS' if moneda == 'ARS' else 'USD'
 
             fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=df_chart['Fecha'], y=df_chart['Neto Invertido'],
-                fill='tozeroy', name='Neto Invertido',
-                mode='lines', line=dict(color='#93C5FD', width=1.5),
-                fillcolor='rgba(147, 197, 253, 0.25)',
-            ))
+            if ni_steps_g:  # solo mostrar Neto Invertido si hay datos de depósitos/retiros
+                fig.add_trace(go.Scatter(
+                    x=df_chart['Fecha'], y=df_chart['Neto Invertido'],
+                    fill='tozeroy', name='Neto Invertido',
+                    mode='lines', line=dict(color='#93C5FD', width=1.5),
+                    fillcolor='rgba(147, 197, 253, 0.25)',
+                ))
             fig.add_trace(go.Scatter(
                 x=df_chart['Fecha'], y=df_chart['Valor Total'],
                 name='Valor Total (tít+cash)',
                 mode='lines', line=dict(color='#1A4B9B', width=2.5),
+                fill='tozeroy' if not ni_steps_g else None,
+                fillcolor='rgba(26, 75, 155, 0.15)' if not ni_steps_g else None,
             ))
             fig.update_layout(
                 hovermode='x unified',
