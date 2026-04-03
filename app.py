@@ -1172,38 +1172,21 @@ def main():
         with open(filename, 'wb') as f:
             f.write(st.session_state.upload_bytes)
 
-    # ── Vista seleccionada ─────────────────────────────────────────────────────
-    vista = st.session_state.get('vista_sel', 'Excel Propio')
+    # ── Esta rama usa siempre port dummy.xlsx en ARS ──────────────────────────
+    vista  = 'Resumen'
+    moneda = 'ARS'
 
-    # ── Moneda desde sesión ────────────────────────────────────────────────────
-    # En modo Resumen las ops son en ARS; se fuerza ARS independientemente del toggle.
-    moneda = 'ARS' if vista == 'Resumen' else st.session_state.get('moneda_sel', 'USD')
-
-    # ── Fecha actual fija = hoy (se muestra en hero card, sin input) ───────────
+    # ── Fecha actual fija = hoy ────────────────────────────────────────────────
     fecha_actual = datetime.now().date()
 
-    # ── Carga de datos según vista ─────────────────────────────────────────────
-    if vista == 'Resumen':
-        operaciones, precios, fx_rates, live_prices, live_fx = load_data_resumen('port dummy.xlsx')
-    else:
-        operaciones, precios, fx_rates, live_prices, live_fx = load_data(filename)
+    # ── Carga de datos ─────────────────────────────────────────────────────────
+    operaciones, precios, fx_rates, live_prices, live_fx = load_data_resumen('port dummy.xlsx')
 
     if operaciones is None or precios is None:
-        st.error(
-            "Error al cargar los datos. "
-            "Verifica que el archivo esté en la carpeta del proyecto."
-        )
+        st.error("Error al cargar los datos. Verifica que 'port dummy.xlsx' esté en la carpeta.")
         return
 
-    # Validar ARS (solo en modo Excel Propio; Resumen siempre es ARS con fx=1.0)
-    if vista != 'Resumen' and moneda == 'ARS' and (fx_rates is None or fx_rates.empty):
-        st.warning(
-            "⚠️ Modo ARS: no se encontró columna 'ARS' en Precios. "
-            "Se muestran valores en USD."
-        )
-        moneda = 'USD'
-
-    lbl_moneda = 'ARS' if moneda == 'ARS' else 'USD'
+    lbl_moneda = 'ARS'
 
     # ── Hero card ──────────────────────────────────────────────────────────────
     fecha_str = _fecha_es(fecha_actual)
@@ -1211,44 +1194,23 @@ def main():
         f'<div style="background:#1A4B9B;border-radius:12px;padding:1.2rem 1.8rem;'
         f'margin-bottom:0.5rem;display:flex;align-items:center;justify-content:space-between;">'
         f'<div>'
-        f'<div style="font-size:1.4rem;font-weight:700;color:#FFFFFF;">Tus Inversiones</div>'
+        f'<div style="font-size:1.4rem;font-weight:700;color:#FFFFFF;">Análisis de Portafolio</div>'
         f'<div style="font-size:0.82rem;color:rgba(255,255,255,0.75);margin-top:2px;">{fecha_str}</div>'
         f'</div>'
         f'<div style="font-size:0.78rem;font-weight:500;color:#FFFFFF;'
         f'background:rgba(255,255,255,0.12);padding:4px 12px;'
-        f'border-radius:20px;border:1px solid rgba(255,255,255,0.35);">{lbl_moneda}</div>'
+        f'border-radius:20px;border:1px solid rgba(255,255,255,0.35);">ARS</div>'
         f'</div>',
         unsafe_allow_html=True
     )
 
     # ══════════════════════════════════════════
     # SECCIÓN 1 – COMPOSICIÓN ACTUAL
-    # Título y toggle de moneda en la misma fila
     # ══════════════════════════════════════════
-    col_s1, _, col_vista, col_mon = st.columns([4, 1, 2, 1])
-    with col_s1:
-        _section_header(
-            "Composición Actual de la Cartera",
-            f"Calculado al {fecha_actual.strftime('%d/%m/%Y')} — valores en {lbl_moneda}"
-        )
-    with col_vista:
-        st.markdown('<div style="height:2.1rem;"></div>', unsafe_allow_html=True)
-        st.radio(
-            'Vista', ['Excel Propio', 'Resumen'],
-            horizontal=True,
-            key='vista_sel',
-            label_visibility='collapsed'
-        )
-    with col_mon:
-        # Espaciador para alinear verticalmente el radio con el título
-        st.markdown('<div style="height:2.1rem;"></div>', unsafe_allow_html=True)
-        moneda = st.radio(
-            'Moneda', ['USD', 'ARS'],
-            horizontal=True,
-            key='moneda_sel',
-            label_visibility='collapsed'
-        )
-    lbl_moneda = 'ARS' if moneda == 'ARS' else 'USD'
+    _section_header(
+        "Composición Actual de la Cartera",
+        f"Calculado al {fecha_actual.strftime('%d/%m/%Y')} — valores en ARS (millones)"
+    )
 
     portfolio_df = calculate_current_portfolio(
         operaciones, precios, fecha_actual, moneda=moneda, fx_rates=fx_rates,
@@ -1269,14 +1231,12 @@ def main():
 
         total_ganancia = total_ganancia_r + total_ganancia_no_r
         pct_total      = (total_ganancia / total_costo * 100) if total_costo > 0 else 0
-        pct_str        = f"({'▼' if pct_total < 0 else '▲'} {abs(pct_total):.1f}%)"
-        summary_row = pd.DataFrame([{
-            'Valor de Mercado':       _fmt_money(total_valor_mercado, moneda),
-            'Costo Total':            _fmt_money(total_costo, moneda),
-            'Amort/Cupones/Div':      _fmt_money(total_amort + total_cup + total_div, moneda),
-            'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
-        }])
-        _render_df(summary_row, left_cols=())
+        pct_str        = f"{'▼' if pct_total < 0 else '▲'} {abs(pct_total):.1f}%"
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: _metric("Valor de Mercado",  _fmt_money(total_valor_mercado, moneda))
+        with c2: _metric("Costo Total",        _fmt_money(total_costo, moneda))
+        with c3: _metric("Amort / Cup / Div",  _fmt_money(total_amort + total_cup + total_div, moneda))
+        with c4: _metric("Ganancia Total",      _fmt_money(total_ganancia, moneda), sub_str=pct_str)
 
         cols_display = [
             'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
@@ -1341,14 +1301,12 @@ def main():
         base       = evolution_df['Valor al Inicio'].sum() + evolution_df['Compras'].sum()
         pct_evo    = (total_gain / base * 100) if base > 0 else 0
         pct_str2   = f"({'▼' if pct_evo < 0 else '▲'} {abs(pct_evo):.1f}%)"
-        summary_evo = pd.DataFrame([{
-            'Valor Total':     _fmt_money(evolution_df['Valor Actual'].sum(), moneda),
-            'Valor al Inicio': _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda),
-            'Compras':         _fmt_money(evolution_df['Compras'].sum(), moneda),
-            'Ventas + Flujos': _fmt_money(flujos, moneda),
-            'Ganancia Total':  _fmt_money(total_gain, moneda),
-        }])
-        _render_df(summary_evo, left_cols=())
+        e1, e2, e3, e4, e5 = st.columns(5)
+        with e1: _metric("Valor Total",      _fmt_money(evolution_df['Valor Actual'].sum(), moneda))
+        with e2: _metric("Valor al Inicio",  _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda))
+        with e3: _metric("Compras",          _fmt_money(evolution_df['Compras'].sum(), moneda))
+        with e4: _metric("Ventas + Flujos",  _fmt_money(flujos, moneda))
+        with e5: _metric("Ganancia Total",   _fmt_money(total_gain, moneda))
 
         evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True)[
             ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
@@ -1431,15 +1389,6 @@ def main():
         pct_cash            = (ganancia_cash / base_cash * 100) if base_cash > 0 else 0
         pct_str_cash        = f"({'▼' if pct_cash < 0 else '▲'} {abs(pct_cash):.1f}%)"
 
-        if vista != 'Resumen':
-            summary_cash = pd.DataFrame([{
-                'Valor Inicial (tít+cash)': _fmt_money(valor_inicial_total, moneda),
-                'Flujos Netos':             _fmt_money(flujos_netos, moneda),
-                'Valor Final Títulos':      _fmt_money(titulos_fin, moneda),
-                'Valor Final Cash':         _fmt_money(cash_fin, moneda),
-                'Ganancia Total':           f"{_fmt_money(ganancia_cash, moneda)} {pct_str_cash}",
-            }])
-            _render_df(summary_cash, left_cols=())
 
         # ── Gráfico: Valor Total vs. Neto Invertido ───────────────────────────
         try:
