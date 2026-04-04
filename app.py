@@ -839,19 +839,29 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         ]
 
         nom_inicio = sales_inicio = divcup_inicio = 0
+        nom_ppp = 0.0
+        costo_ppp = 0.0
         for _, op in ops_until_inicio.iterrows():
             tipo = op['Tipo'].strip()
             monto = _get_monto(op, moneda, fx_rates)
             if tipo == 'Compra':
                 nom_inicio   += op['Cantidad']
+                nom_ppp      += op['Cantidad']
+                costo_ppp    += monto
             elif tipo == 'Venta':
                 nom_inicio   -= op['Cantidad']
                 sales_inicio += monto
+                if nom_ppp > 0:
+                    costo_ppp = max(costo_ppp - (costo_ppp / nom_ppp) * op['Cantidad'], 0)
+                    nom_ppp   = max(nom_ppp - op['Cantidad'], 0)
             elif _clasificar_operacion(tipo):
                 divcup_inicio += monto
                 qty = op.get('Cantidad', np.nan)
                 if _clasificar_operacion(tipo) == 'amortizacion' and pd.notna(qty) and qty > 0:
                     nom_inicio = max(nom_inicio - qty, 0)
+                    if nom_ppp > 0:
+                        costo_ppp = max(costo_ppp - (costo_ppp / nom_ppp) * qty, 0)
+                        nom_ppp   = max(nom_ppp - qty, 0)
 
         # Omitir activos sin actividad relevante en el período
         if nom_inicio <= 0 and ops_en_rango.empty:
@@ -888,14 +898,22 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
             if tipo == 'Compra':
                 nom_fin            += op['Cantidad']
                 compras_en_periodo += monto
+                nom_ppp            += op['Cantidad']
+                costo_ppp          += monto
             elif tipo == 'Venta':
                 nom_fin   -= op['Cantidad']
                 sales_fin += monto
+                if nom_ppp > 0:
+                    costo_ppp = max(costo_ppp - (costo_ppp / nom_ppp) * op['Cantidad'], 0)
+                    nom_ppp   = max(nom_ppp - op['Cantidad'], 0)
             elif _clasificar_operacion(tipo):
                 divcup_fin += monto
                 qty = op.get('Cantidad', np.nan)
                 if _clasificar_operacion(tipo) == 'amortizacion' and pd.notna(qty) and qty > 0:
                     nom_fin = max(nom_fin - qty, 0)
+                    if nom_ppp > 0:
+                        costo_ppp = max(costo_ppp - (costo_ppp / nom_ppp) * qty, 0)
+                        nom_ppp   = max(nom_ppp - qty, 0)
 
         # M3: advertir si faltan precios
         avail_inicio = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_inicio)]
@@ -940,9 +958,12 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         # queda capturada en Valor al Inicio (evita doble conteo en la tarjeta Flujos).
         compras_adicionales = compras_en_periodo if nom_inicio > 0 else 0
 
+        ppp = costo_ppp / nom_ppp if nom_ppp > 0 else np.nan
+
         evolution_data.append({
             'Activo':               asset,
             'Nominales':            nom_fin,
+            'PPP':                  ppp,
             'Precio Actual':        precio_fin,
             'Valor Actual':         valor_fin,
             'Valor al Inicio':      valor_inicio_display,
@@ -1314,6 +1335,7 @@ def main():
             nom_raw = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'}) \
                           .sort_values('Nominales', ascending=False).reset_index(drop=True)['Nominales']
             display_df['_nom'] = nom_raw.values
+            display_df['PPP'] = display_df['Costo'] / display_df['_nom']
             display_df['Dif. Diaria']  = display_df.apply(lambda r: _diff_diaria(r['Activo'], r['_nom']), axis=1)
             display_df['Dif. Mensual'] = display_df.apply(lambda r: _diff_mensual(r['Activo'], r['_nom']), axis=1)
 
@@ -1325,6 +1347,7 @@ def main():
             tot_ganancia     = display_df['Ganancia Total'].sum()
 
             display_df['Nominales']         = display_df['Nominales'].apply(_fmt_number)
+            display_df['PPP']               = display_df['PPP'].apply(lambda x: _fmt_price(x, moneda))
             display_df['Precio Actual']     = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
             display_df['Valor Actual']      = display_df['Valor Actual'].apply(lambda x: _fmt_money(x, moneda))
             display_df['Costo']             = display_df['Costo'].apply(lambda x: _fmt_money(x, moneda))
@@ -1333,12 +1356,12 @@ def main():
             display_df['Dif. Diaria']       = display_df['Dif. Diaria'].apply(_fmt_diff)
             display_df['Dif. Mensual']      = display_df['Dif. Mensual'].apply(_fmt_diff)
 
-            final_cols = ['Activo', 'Nominales', 'Precio Actual', 'Valor Actual',
+            final_cols = ['Activo', 'Nominales', 'PPP', 'Precio Actual', 'Valor Actual',
                           'Costo', 'Amort / Cup / Div', 'Dif. Diaria', 'Dif. Mensual', 'Ganancia Total']
             display_df = display_df[final_cols]
 
             total_row = pd.DataFrame([{
-                'Activo': 'TOTAL', 'Nominales': '-', 'Precio Actual': '-',
+                'Activo': 'TOTAL', 'Nominales': '-', 'PPP': '-', 'Precio Actual': '-',
                 'Valor Actual':      _fmt_money(tot_valor_actual, moneda),
                 'Costo':             _fmt_money(tot_costo, moneda),
                 'Amort / Cup / Div': _fmt_money(tot_amort, moneda),
@@ -1438,33 +1461,34 @@ def main():
             evo_disp['Compras - Ventas'] = evo_disp['Compras'] - evo_disp['Ventas']
 
             evo_disp['Nominales'] = evo_disp['Nominales'].apply(_fmt_number)
-            for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
+            for col in ['PPP', 'Precio Actual']:
+                evo_disp[col] = evo_disp[col].apply(lambda x: _fmt_price(x, moneda))
+            for col in ['Valor Actual', 'Valor al Inicio',
                         'Compras - Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
-                if col == 'Precio Actual':
-                    evo_disp[col] = evo_disp[col].apply(lambda x: _fmt_price(x, moneda))
-                else:
-                    evo_disp[col] = evo_disp[col].apply(lambda x: _fmt_money(x, moneda))
+                evo_disp[col] = evo_disp[col].apply(lambda x: _fmt_money(x, moneda))
 
             if with_diffs:
                 evo_disp['Dif. Diaria']  = evo_disp['Dif. Diaria'].apply(_fmt_diff)
                 evo_disp['Dif. Mensual'] = evo_disp['Dif. Mensual'].apply(_fmt_diff)
                 final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Compras - Ventas',
-                              'Amort / Cup / Div', 'Precio Actual', 'Valor Actual',
+                              'Amort / Cup / Div', 'PPP', 'Precio Actual', 'Valor Actual',
                               'Dif. Diaria', 'Dif. Mensual']
                 total_row = pd.DataFrame([{
                     'Activo': 'TOTAL', 'Nominales': '-', 'Valor al Inicio': _fmt_money(tot_vi, moneda),
                     'Compras - Ventas': _fmt_money(tot_neto, moneda),
-                    'Amort / Cup / Div': _fmt_money(tot_acd, moneda), 'Precio Actual': '-',
+                    'Amort / Cup / Div': _fmt_money(tot_acd, moneda),
+                    'PPP': '-', 'Precio Actual': '-',
                     'Valor Actual': _fmt_money(tot_val, moneda),
                     'Dif. Diaria': _fmt_diff(tot_dif_dia), 'Dif. Mensual': _fmt_diff(tot_dif_mes),
                 }])
             else:
                 final_cols = ['Activo', 'Nominales', 'Valor al Inicio', 'Compras - Ventas',
-                              'Amort / Cup / Div', 'Precio Actual', 'Valor Actual', 'Ganancia Total']
+                              'Amort / Cup / Div', 'PPP', 'Precio Actual', 'Valor Actual', 'Ganancia Total']
                 total_row = pd.DataFrame([{
                     'Activo': 'TOTAL', 'Nominales': '-', 'Valor al Inicio': _fmt_money(tot_vi, moneda),
                     'Compras - Ventas': _fmt_money(tot_neto, moneda),
-                    'Amort / Cup / Div': _fmt_money(tot_acd, moneda), 'Precio Actual': '-',
+                    'Amort / Cup / Div': _fmt_money(tot_acd, moneda),
+                    'PPP': '-', 'Precio Actual': '-',
                     'Valor Actual': _fmt_money(tot_val, moneda),
                     'Ganancia Total': _fmt_money(tot_gan, moneda),
                 }])
