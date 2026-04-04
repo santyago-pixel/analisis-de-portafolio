@@ -934,16 +934,21 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         # de compra como "Valor al Inicio". La ganancia se calcula con valor_inicio = 0.
         valor_inicio_display = valor_inicio if nom_inicio > 0 else compras_en_periodo
 
+        # "Compras Adicionales" = compras sobre posición pre-existente.
+        # Para activos nuevos es 0 (su inversión ya está en Valor al Inicio).
+        compras_adicionales = compras_en_periodo if nom_inicio > 0 else 0
+
         evolution_data.append({
-            'Activo':            asset,
-            'Nominales':         nom_fin,
-            'Precio Actual':     precio_fin,
-            'Valor Actual':      valor_fin,
-            'Valor al Inicio':   valor_inicio_display,
-            'Compras':           compras_en_periodo,
-            'Ventas':            ventas_en_periodo,
-            'Amort / Cup / Div': div_cup_en_periodo,
-            'Ganancia Total':    ganancia_total,
+            'Activo':               asset,
+            'Nominales':            nom_fin,
+            'Precio Actual':        precio_fin,
+            'Valor Actual':         valor_fin,
+            'Valor al Inicio':      valor_inicio_display,
+            'Compras':              compras_en_periodo,
+            'Compras Adicionales':  compras_adicionales,
+            'Ventas':               ventas_en_periodo,
+            'Amort / Cup / Div':    div_cup_en_periodo,
+            'Ganancia Total':       ganancia_total,
         })
 
     return pd.DataFrame(evolution_data)
@@ -1361,22 +1366,28 @@ def main():
     else:
         flujos     = evolution_df['Ventas'].sum() + evolution_df['Amort / Cup / Div'].sum()
         total_gain = evolution_df['Ganancia Total'].sum()
-        base       = evolution_df['Valor al Inicio'].sum() + evolution_df['Compras'].sum()
+        # Base del %: Valor al Inicio + Compras Adicionales (evita doble conteo
+        # para activos nuevos cuyo costo ya está en Valor al Inicio).
+        base       = evolution_df['Valor al Inicio'].sum() + evolution_df['Compras Adicionales'].sum()
         pct_evo    = (total_gain / base * 100) if base > 0 else 0
         pct_str2   = f"({'▼' if pct_evo < 0 else '▲'} {abs(pct_evo):.1f}%)"
         summary_evo = pd.DataFrame([{
             'Valor Total':     _fmt_money(evolution_df['Valor Actual'].sum(), moneda),
             'Valor al Inicio': _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda),
-            'Compras':         _fmt_money(evolution_df['Compras'].sum(), moneda),
+            'Compras':         _fmt_money(evolution_df['Compras Adicionales'].sum(), moneda),
             'Ventas + Flujos': _fmt_money(flujos, moneda),
             'Ganancia Total':  f"{_fmt_money(total_gain, moneda)} {pct_str2}",
         }])
         _render_df(summary_evo, left_cols=())
 
-        evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True)[
+        # Tabla de evolución: usar Compras Adicionales para que las columnas cuadren.
+        # Ganancia = Valor Actual − Valor al Inicio − Compras + Ventas + Amort/Cup/Div
+        evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True).copy()
+        evo_display['Compras'] = evo_display['Compras Adicionales']
+        evo_display = evo_display[
             ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
              'Amort / Cup / Div', 'Precio Actual', 'Valor Actual', 'Ganancia Total']
-        ].copy()
+        ]
         evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
         for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
                     'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
