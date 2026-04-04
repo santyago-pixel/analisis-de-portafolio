@@ -628,6 +628,7 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
 
     assets = [a for a in operaciones['Activo'].unique() if pd.notna(a)]
     evolution_data = []
+    all_flows_md = []  # flujos datados para Modified Dietz a nivel portafolio
 
     for asset in assets:
         asset_ops = operaciones[operaciones['Activo'] == asset].sort_values('Fecha')
@@ -708,11 +709,30 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         if nom_inicio <= 0 and ops_en_rango.empty:
             continue
 
+        # Excluir activos cuya amortización final cae exactamente en fecha_inicio:
+        # su posición efectiva el primer día del período ya es cero.
+        ops_on_inicio_day    = ops_en_rango[ops_en_rango['Fecha'] == pd.to_datetime(fecha_inicio)]
+        ops_after_inicio_day = ops_en_rango[ops_en_rango['Fecha'] >  pd.to_datetime(fecha_inicio)]
+        nom_after_inicio_day = nom_inicio
+        for _, op in ops_on_inicio_day.iterrows():
+            tipo = op['Tipo'].strip()
+            if tipo == 'Compra':
+                nom_after_inicio_day += op['Cantidad']
+            elif tipo == 'Venta':
+                nom_after_inicio_day -= op['Cantidad']
+            elif _clasificar_operacion(tipo) == 'amortizacion':
+                qty = op.get('Cantidad', np.nan)
+                if pd.notna(qty) and qty > 0:
+                    nom_after_inicio_day = max(nom_after_inicio_day - qty, 0)
+        if nom_after_inicio_day <= 0 and ops_after_inicio_day.empty:
+            continue
+
         # Acumulados en el período
         nom_fin    = nom_inicio
         sales_fin  = sales_inicio
         divcup_fin = divcup_inicio
         compras_en_periodo = 0
+        flujos_md = []  # flujos datados para Modified Dietz por activo
 
         for _, op in ops_en_rango.iterrows():
             tipo = op['Tipo'].strip()
@@ -720,11 +740,14 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
             if tipo == 'Compra':
                 nom_fin            += op['Cantidad']
                 compras_en_periodo += monto
+                flujos_md.append((op['Fecha'], +monto))
             elif tipo == 'Venta':
                 nom_fin   -= op['Cantidad']
                 sales_fin += monto
+                flujos_md.append((op['Fecha'], -monto))
             elif _clasificar_operacion(tipo):
                 divcup_fin += monto
+                flujos_md.append((op['Fecha'], -monto))
 
         # M3: advertir si faltan precios
         avail_inicio = asset_prices[asset_prices['Fecha'] <= pd.to_datetime(fecha_inicio)]
@@ -759,19 +782,39 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         ventas_en_periodo  = sales_fin  - sales_inicio
         ganancia_total     = (valor_fin - valor_inicio - compras_en_periodo) + div_cup_en_periodo + ventas_en_periodo
 
+        # Para activos comprados dentro del período (nom_inicio = 0), mostrar el costo
+        # de compra como "Valor al Inicio". La ganancia se calcula con valor_inicio = 0.
+        valor_inicio_display = valor_inicio if nom_inicio > 0 else compras_en_periodo
+
+        # "Compras Adicionales" = compras sobre posición pre-existente.
+        # Para activos nuevos es 0 (su inversión ya está en Valor al Inicio).
+        compras_adicionales = compras_en_periodo if nom_inicio > 0 else 0
+
+        # Modified Dietz: retorno por activo ponderado por tiempo de flujos
+        retorno_md = _modified_dietz_pct(valor_inicio, valor_fin, flujos_md,
+                                         fecha_inicio, fecha_fin)
+        all_flows_md.extend(flujos_md)
+
+        # PPP: precio promedio ponderado del período
+        ppp = ((valor_inicio_display + compras_adicionales) / nom_fin) if nom_fin > 0 else np.nan
+
         evolution_data.append({
-            'Activo':            asset,
-            'Nominales':         nom_fin,
-            'Precio Actual':     precio_fin,
-            'Valor Actual':      valor_fin,
-            'Valor al Inicio':   valor_inicio,
-            'Compras':           compras_en_periodo,
-            'Ventas':            ventas_en_periodo,
-            'Amort / Cup / Div': div_cup_en_periodo,
-            'Ganancia Total':    ganancia_total,
+            'Activo':               asset,
+            'Nominales':            nom_fin,
+            'PPP':                  ppp,
+            'Precio Actual':        precio_fin,
+            'Valor Actual':         valor_fin,
+            'Valor al Inicio':      valor_inicio_display,
+            '_Valor Inicio Real':   valor_inicio,
+            'Compras':              compras_en_periodo,
+            'Compras Adicionales':  compras_adicionales,
+            'Ventas':               ventas_en_periodo,
+            'Amort / Cup / Div':    div_cup_en_periodo,
+            'Ganancia Total':       ganancia_total,
+            'Retorno':              retorno_md,
         })
 
-    return pd.DataFrame(evolution_data)
+    return pd.DataFrame(evolution_data), all_flows_md
 
 
 # ─────────────────────────────────────────────
@@ -986,6 +1029,41 @@ def _section_header(title, subtitle=None):
     )
 
 
+def _modified_dietz_pct(v_inicio, v_fin, flows, fecha_inicio, fecha_fin):
+    """Retorno Modified Dietz (%).
+
+    Fórmula estándar de medición de rendimiento ponderado por tiempo simplificado:
+      R = (V_fin − V_inicio − ΣCF_i) / (V_inicio + Σ(CF_i × W_i))
+    donde W_i = (T − t_i) / T  y  t_i = días desde inicio hasta el flujo i.
+
+    Parámetros:
+      v_inicio: valor de mercado al inicio del período.
+      v_fin:    valor de mercado al final del período.
+      flows:    lista de (fecha, monto) — monto > 0 = inflow (compra/depósito),
+                monto < 0 = outflow (venta/amort/cupón/dividendo/retiro).
+      fecha_inicio, fecha_fin: límites del período.
+
+    Retorna porcentaje (ej. 5.2 para 5.2%).
+    """
+    T = (pd.to_datetime(fecha_fin) - pd.to_datetime(fecha_inicio)).days
+    if T <= 0:
+        return 0.0
+
+    sum_flows = sum(f for _, f in flows)
+    gain = v_fin - v_inicio - sum_flows
+
+    weighted_flows = sum(
+        f * (T - (pd.to_datetime(d) - pd.to_datetime(fecha_inicio)).days) / T
+        for d, f in flows
+    )
+
+    base = v_inicio + weighted_flows
+    if abs(base) < 1e-9:
+        return 0.0
+
+    return (gain / base) * 100
+
+
 # ─────────────────────────────────────────────
 # Helpers de presentación
 # ─────────────────────────────────────────────
@@ -1166,7 +1244,7 @@ def main():
         st.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
         return
 
-    evolution_df = calculate_portfolio_evolution(
+    evolution_df, all_flows_md = calculate_portfolio_evolution(
         operaciones, precios, fecha_inicio, fecha_fin, moneda=moneda, fx_rates=fx_rates,
         live_prices=live_prices, live_fx=live_fx
     )
@@ -1176,23 +1254,36 @@ def main():
     else:
         flujos     = evolution_df['Ventas'].sum() + evolution_df['Amort / Cup / Div'].sum()
         total_gain = evolution_df['Ganancia Total'].sum()
-        base       = evolution_df['Valor al Inicio'].sum() + evolution_df['Compras'].sum()
-        pct_evo    = (total_gain / base * 100) if base > 0 else 0
+        # Modified Dietz a nivel portafolio: pondera flujos por tiempo
+        v_inicio_real_total = evolution_df['_Valor Inicio Real'].sum()
+        v_fin_total         = evolution_df['Valor Actual'].sum()
+        pct_evo = _modified_dietz_pct(v_inicio_real_total, v_fin_total,
+                                       all_flows_md, fecha_inicio, fecha_fin)
         pct_str2   = f"({'▼' if pct_evo < 0 else '▲'} {abs(pct_evo):.1f}%)"
         summary_evo = pd.DataFrame([{
             'Valor Total':     _fmt_money(evolution_df['Valor Actual'].sum(), moneda),
             'Valor al Inicio': _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda),
-            'Compras':         _fmt_money(evolution_df['Compras'].sum(), moneda),
+            'Compras':         _fmt_money(evolution_df['Compras Adicionales'].sum(), moneda),
             'Ventas + Flujos': _fmt_money(flujos, moneda),
             'Ganancia Total':  f"{_fmt_money(total_gain, moneda)} {pct_str2}",
         }])
         st.dataframe(summary_evo, use_container_width=True, hide_index=True)
 
-        evo_display = evolution_df.copy()
+        # Tabla de evolución: usar Compras Adicionales para que las columnas cuadren.
+        evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True).copy()
+        evo_display['Compras'] = evo_display['Compras Adicionales']
+        evo_display = evo_display[
+            ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
+             'Amort / Cup / Div', 'PPP', 'Precio Actual', 'Valor Actual',
+             'Ganancia Total', 'Retorno']
+        ]
         evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
-        for col in ['Precio Actual', 'Valor Actual', 'Valor al Inicio',
+        evo_display['Retorno'] = evo_display['Retorno'].apply(
+            lambda x: f"{'▼' if x < 0 else '▲'} {abs(x):.1f}%" if pd.notna(x) else "-"
+        )
+        for col in ['Precio Actual', 'PPP', 'Valor Actual', 'Valor al Inicio',
                     'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
-            if col == 'Precio Actual':
+            if col in ('Precio Actual', 'PPP'):
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
             else:
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
@@ -1248,24 +1339,30 @@ def main():
                 (ops_cash['Fecha'] >  pd.to_datetime(fecha_inicio)) &
                 (ops_cash['Fecha'] <= pd.to_datetime(fecha_fin))
             ]
-            flujos_netos = sum(
-                ((row[col_dep] if pd.notna(row.get(col_dep, np.nan)) else 0.0) -
-                 (row[col_ret] if pd.notna(row.get(col_ret, np.nan)) else 0.0)) *
-                (_get_fx(fx_rates, row['Fecha']) if moneda == 'ARS' else 1.0)
-                for _, row in ops_flujos.iterrows()
-                if pd.notna(row.get(col_dep, np.nan)) or pd.notna(row.get(col_ret, np.nan))
-            )
+            flujos_netos = 0.0
+            cash_flows_md = []  # flujos datados para Modified Dietz cash
+            for _, row in ops_flujos.iterrows():
+                if pd.notna(row.get(col_dep, np.nan)) or pd.notna(row.get(col_ret, np.nan)):
+                    dep = row[col_dep] if pd.notna(row.get(col_dep, np.nan)) else 0.0
+                    ret = row[col_ret] if pd.notna(row.get(col_ret, np.nan)) else 0.0
+                    fx  = _get_fx(fx_rates, row['Fecha']) if moneda == 'ARS' else 1.0
+                    net = (dep - ret) * fx
+                    flujos_netos += net
+                    if abs(net) > 1e-9:
+                        cash_flows_md.append((row['Fecha'], net))
         else:
             cash_inicio = cash_fin = flujos_netos = 0.0
+            cash_flows_md = []
             st.caption("ℹ️ Sin columnas de cash (Deposito / Retiro) en el Excel — valores de cash en $0.")
 
-        titulos_inicio      = evolution_df['Valor al Inicio'].sum()
+        titulos_inicio      = evolution_df['_Valor Inicio Real'].sum()
         titulos_fin         = evolution_df['Valor Actual'].sum()
         valor_inicial_total = titulos_inicio + cash_inicio
         valor_final_total   = titulos_fin    + cash_fin
         ganancia_cash       = valor_final_total - valor_inicial_total - flujos_netos
-        base_cash           = valor_inicial_total + max(flujos_netos, 0)
-        pct_cash            = (ganancia_cash / base_cash * 100) if base_cash > 0 else 0
+        # Modified Dietz para retorno incluyendo cash (pondera flujos externos por tiempo)
+        pct_cash = _modified_dietz_pct(valor_inicial_total, valor_final_total,
+                                        cash_flows_md, fecha_inicio, fecha_fin)
         pct_str_cash        = f"({'▼' if pct_cash < 0 else '▲'} {abs(pct_cash):.1f}%)"
 
         summary_cash = pd.DataFrame([{
@@ -1276,6 +1373,12 @@ def main():
             'Ganancia Total':           f"{_fmt_money(ganancia_cash, moneda)} {pct_str_cash}",
         }])
         st.dataframe(summary_cash, use_container_width=True, hide_index=True)
+
+        st.caption(
+            "ℹ️ Los retornos (%) se calculan con Modified Dietz: pondera cada flujo "
+            "por el tiempo que estuvo invertido en el período, evitando distorsiones "
+            "por compras/ventas cercanas al inicio o fin del rango."
+        )
 
         # ── Gráfico: Valor Total vs. Neto Invertido ───────────────────────────
         try:
