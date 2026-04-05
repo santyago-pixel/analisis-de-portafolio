@@ -1334,12 +1334,12 @@ def main():
                     ("Valor de Mercado", _fmt_money(total_valor_mercado, moneda)),
                     ("Costo Total", _fmt_money(total_costo, moneda)),
                     ("Pagos", _fmt_money(total_ganancia_r, moneda)),
-                    ("Gan. x Ventas", _fmt_money(total_ganancia_rlz, moneda)),
                 ],
                 total_label="Ganancia Total",
                 total_value=_fmt_money(total_ganancia, moneda),
                 total_sub=pct_str,
                 side_items=[
+                    ("Gan. x Ventas", _fmt_money(total_ganancia_rlz, moneda)),
                     ("Gan. no Real.", _fmt_money(total_ganancia_no_r, moneda)),
                     ("Resultado USD @ TC", _fmt_money(total_res_usd_tc, moneda)),
                     ("Efecto FX", _fmt_money(total_efecto_fx, moneda)),
