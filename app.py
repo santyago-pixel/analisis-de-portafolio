@@ -1258,16 +1258,19 @@ def main():
             summary_row = pd.DataFrame([{
                 'Valor de Mercado':       _fmt_money(total_valor_mercado, moneda),
                 'Costo Total':            _fmt_money(total_costo, moneda),
-                'Gan. Realizadas':        _fmt_money(total_ganancia_rlz, moneda),
+                'Gan. Real.':             _fmt_money(total_ganancia_rlz, moneda),
+                'Gan. no Real.':          _fmt_money(total_ganancia_no_r, moneda),
+                'Amort/Cup/Div':          _fmt_money(total_amort + total_cup + total_div, moneda),
+                'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
                 'Res. Econ. USD @ TC':    _fmt_money(total_res_usd_tc, moneda),
                 'Efecto FX':              _fmt_money(total_efecto_fx, moneda),
-                'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
             }])
         else:
             summary_row = pd.DataFrame([{
                 'Valor de Mercado':       _fmt_money(total_valor_mercado, moneda),
                 'Costo Total':            _fmt_money(total_costo, moneda),
-                'Gan. Realizadas':        _fmt_money(total_ganancia_rlz, moneda),
+                'Gan. Real.':             _fmt_money(total_ganancia_rlz, moneda),
+                'Gan. no Real.':          _fmt_money(total_ganancia_no_r, moneda),
                 'Amort/Cupones/Div':      _fmt_money(total_amort + total_cup + total_div, moneda),
                 'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
             }])
@@ -1326,9 +1329,8 @@ def main():
                 st.caption(nota)
         if moneda == 'ARS':
             st.caption(
-                "ℹ️ En ARS, 'Res. Econ. USD @ TC' convierte a tipo de cambio actual el resultado económico total en USD "
-                "(mark-to-market, ventas, cupones, amortizaciones y dividendos). "
-                "'Efecto FX' es la diferencia entre esa base y la ganancia total en pesos."
+                "ℹ️ Ganancia Total = Gan. Real. + Gan. no Real. + Amort/Cup/Div. "
+                "También se abre como: Ganancia Total = Res. Econ. USD @ TC + Efecto FX."
             )
         else:
             st.caption(
