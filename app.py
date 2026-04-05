@@ -1258,9 +1258,9 @@ def main():
             summary_row = pd.DataFrame([{
                 'Valor de Mercado':       _fmt_money(total_valor_mercado, moneda),
                 'Costo Total':            _fmt_money(total_costo, moneda),
-                'Gan. Real.':             _fmt_money(total_ganancia_rlz, moneda),
+                'Gan. x Ventas':          _fmt_money(total_ganancia_rlz, moneda),
                 'Gan. no Real.':          _fmt_money(total_ganancia_no_r, moneda),
-                'Amort/Cup/Div':          _fmt_money(total_amort + total_cup + total_div, moneda),
+                'Pagos':                  _fmt_money(total_amort + total_cup + total_div, moneda),
                 'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
                 'Resultado USD @ TC':     _fmt_money(total_res_usd_tc, moneda),
                 'Efecto FX':              _fmt_money(total_efecto_fx, moneda),
@@ -1269,9 +1269,9 @@ def main():
             summary_row = pd.DataFrame([{
                 'Valor de Mercado':       _fmt_money(total_valor_mercado, moneda),
                 'Costo Total':            _fmt_money(total_costo, moneda),
-                'Gan. Real.':             _fmt_money(total_ganancia_rlz, moneda),
+                'Gan. x Ventas':          _fmt_money(total_ganancia_rlz, moneda),
                 'Gan. no Real.':          _fmt_money(total_ganancia_no_r, moneda),
-                'Amort/Cupones/Div':      _fmt_money(total_amort + total_cup + total_div, moneda),
+                'Pagos':                  _fmt_money(total_amort + total_cup + total_div, moneda),
                 'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
             }])
         st.dataframe(summary_row, use_container_width=True, hide_index=True)
@@ -1315,14 +1315,14 @@ def main():
                          "Precio Actual": st.column_config.TextColumn("Precio", width="small"),
                          "Valor Actual": st.column_config.TextColumn("Valor", width="small"),
                          "Costo": st.column_config.TextColumn("Costo", width="small"),
-                         "Ganancias Realizadas": st.column_config.TextColumn("Real.", width="small"),
+                         "Ganancias Realizadas": st.column_config.TextColumn("Gan. x Ventas", width="small"),
                          "Ganancias no Realizadas": st.column_config.TextColumn("No real.", width="small"),
                          "Resultado Econ. USD @ TC": st.column_config.TextColumn("USD@TC", width="small"),
                          "Efecto FX": st.column_config.TextColumn("FX", width="small"),
-                         "Amort / Cup / Div": st.column_config.TextColumn("ACD", width="small"),
-                         "Amortizaciones": st.column_config.TextColumn("Amortizaciones", width="small"),
-                         "Cupones": st.column_config.TextColumn("Cupones", width="small"),
-                         "Dividendos": st.column_config.TextColumn("Dividendos", width="small"),
+                         "Amort / Cup / Div": st.column_config.TextColumn("Pagos", width="small"),
+                         "Amortizaciones": st.column_config.TextColumn("Pagos", width="small"),
+                         "Cupones": st.column_config.TextColumn("Pagos", width="small"),
+                         "Dividendos": st.column_config.TextColumn("Pagos", width="small"),
                          "Ganancia Total": st.column_config.TextColumn("Total", width="small"),
                      })
 
@@ -1331,7 +1331,7 @@ def main():
                 st.caption(nota)
         if moneda == 'ARS':
             st.caption(
-                "ℹ️ Ganancia Total = Gan. Real. + Gan. no Real. + Amort/Cup/Div. "
+                "ℹ️ Ganancia Total = Gan. x Ventas + Gan. no Real. + Pagos. "
                 "También se abre como: Ganancia Total = Resultado USD @ TC + Efecto FX."
             )
         else:
