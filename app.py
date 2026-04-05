@@ -1336,7 +1336,12 @@ def main():
                 "cobrados desde la apertura de la posición actual. Los flujos de posiciones "
                 "anteriores del mismo activo (antes del último reset) se reflejan en la Sección 2."
             )
-        csv = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].to_csv(index=False)
+        export_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'}).copy()
+        if moneda == 'ARS':
+            export_df['Amort / Cup / Div'] = (
+                export_df['Amortizaciones'] + export_df['Cupones'] + export_df['Dividendos']
+            )
+        csv = export_df[cols_display].to_csv(index=False)
         st.download_button(
             label="📥 Descargar CSV",
             data=csv,
