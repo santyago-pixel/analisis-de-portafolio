@@ -1090,6 +1090,10 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
     side_items = side_items or []
     has_side = bool(side_items)
     cols = st.columns([4.85, 1.95, 2.2] if has_side else [5.7, 2.3])
+    if has_side and side_items and isinstance(side_items[0], tuple):
+        side_groups = [side_items]
+    else:
+        side_groups = side_items
 
     left_col = cols[0]
     total_col = cols[1]
@@ -1121,17 +1125,17 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
             is_neg = str(total_sub).strip().startswith('(') and '▼' in str(total_sub)
             color = '#DC2626' if is_neg else '#16A34A'
             delta_html = (
-                f'<div style="font-size:0.94rem;font-weight:700;color:{color};margin-top:0.48rem;">'
+                f'<div style="font-size:0.95rem;font-weight:700;color:{color};margin-top:0.44rem;">'
                 f'{total_sub}</div>'
             )
         st.markdown(
             f'<div style="background:linear-gradient(180deg,#FFFFFF 0%,#F7FAFF 100%);'
             f'border:1px solid #D9E3F0;border-radius:18px;'
-            f'box-shadow:0 12px 28px rgba(15,23,42,0.08);padding:1rem 1.1rem;min-height:128px;'
+            f'box-shadow:0 12px 28px rgba(15,23,42,0.08);padding:0.95rem 1rem;min-height:118px;'
             f'display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;">'
-            f'<div style="font-size:0.9rem;font-weight:700;color:#667085;'
+            f'<div style="font-size:0.82rem;font-weight:700;color:#667085;'
             f'margin-bottom:0.42rem;">{total_label}</div>'
-            f'<div style="font-size:1.9rem;font-weight:800;color:#122033;line-height:1.05;">{total_value}</div>'
+            f'<div style="font-size:1.35rem;font-weight:800;color:#122033;line-height:1.08;">{total_value}</div>'
             f'{delta_html}'
             f'</div>',
             unsafe_allow_html=True
@@ -1139,21 +1143,28 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
 
     if has_side and side_col is not None:
         with side_col:
-            rows = []
-            for i, (label, value) in enumerate(side_items):
-                border = 'border-bottom:1px solid #E5E7EB;' if i < len(side_items) - 1 else ''
-                rows.append(
-                    f'<div style="display:flex;justify-content:space-between;gap:0.8rem;'
-                    f'align-items:center;padding:0.68rem 0.9rem;{border}">'
-                    f'<div style="font-size:0.8rem;font-weight:600;color:#667085;'
-                    f'white-space:nowrap;">{label}</div>'
-                    f'<div style="font-size:1.06rem;font-weight:700;color:#1B2333;text-align:right;">{value}</div>'
+            cards = []
+            for group in side_groups:
+                rows = []
+                for i, (label, value) in enumerate(group):
+                    border = 'border-bottom:1px solid #E5E7EB;' if i < len(group) - 1 else ''
+                    rows.append(
+                        f'<div style="display:flex;justify-content:space-between;gap:0.8rem;'
+                        f'align-items:center;padding:0.82rem 0.95rem;{border}">'
+                        f'<div style="font-size:0.82rem;font-weight:600;color:#667085;'
+                        f'white-space:nowrap;">{label}</div>'
+                        f'<div style="font-size:1.35rem;font-weight:800;color:#122033;text-align:right;line-height:1.08;">{value}</div>'
+                        f'</div>'
+                    )
+                cards.append(
+                    f'<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:16px;'
+                    f'box-shadow:0 10px 26px rgba(15,23,42,0.05);overflow:hidden;min-height:118px;">'
+                    f'{"".join(rows)}'
                     f'</div>'
                 )
             st.markdown(
-                f'<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:16px;'
-                f'box-shadow:0 10px 26px rgba(15,23,42,0.05);overflow:hidden;">'
-                f'{"".join(rows)}'
+                f'<div style="display:flex;flex-direction:column;gap:0.7rem;">'
+                f'{"".join(cards)}'
                 f'</div>',
                 unsafe_allow_html=True
             )
@@ -1339,10 +1350,14 @@ def main():
                 total_value=_fmt_money(total_ganancia, moneda),
                 total_sub=pct_str,
                 side_items=[
-                    ("Gan. x Ventas", _fmt_money(total_ganancia_rlz, moneda)),
-                    ("Gan. no Real.", _fmt_money(total_ganancia_no_r, moneda)),
-                    ("Resultado USD @ TC", _fmt_money(total_res_usd_tc, moneda)),
-                    ("Efecto FX", _fmt_money(total_efecto_fx, moneda)),
+                    [
+                        ("Gan. x Ventas", _fmt_money(total_ganancia_rlz, moneda)),
+                        ("Gan. no Real.", _fmt_money(total_ganancia_no_r, moneda)),
+                    ],
+                    [
+                        ("Resultado USD @ TC", _fmt_money(total_res_usd_tc, moneda)),
+                        ("Efecto FX", _fmt_money(total_efecto_fx, moneda)),
+                    ],
                 ],
             )
         else:
