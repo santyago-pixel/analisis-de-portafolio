@@ -1306,7 +1306,7 @@ def main():
         display_df['Ganancia Total'] = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
         st.dataframe(display_df, use_container_width=True, hide_index=True,
                      column_config={
-                         "Activo": st.column_config.TextColumn("Activo", width="medium"),
+                         "Activo": st.column_config.TextColumn("Activo", width="small"),
                          "Nominales": st.column_config.TextColumn("Nominales", width="small"),
                          "Precio Actual": st.column_config.TextColumn("Precio Actual", width="small"),
                          "Valor Actual": st.column_config.TextColumn("Valor Actual", width="small"),
