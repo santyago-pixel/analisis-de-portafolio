@@ -1262,7 +1262,7 @@ def main():
                 'Gan. no Real.':          _fmt_money(total_ganancia_no_r, moneda),
                 'Amort/Cup/Div':          _fmt_money(total_amort + total_cup + total_div, moneda),
                 'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
-                'Res. Econ. USD @ TC':    _fmt_money(total_res_usd_tc, moneda),
+                'Resultado USD @ TC':     _fmt_money(total_res_usd_tc, moneda),
                 'Efecto FX':              _fmt_money(total_efecto_fx, moneda),
             }])
         else:
@@ -1279,8 +1279,8 @@ def main():
         if moneda == 'ARS':
             cols_display = [
                 'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
-                'Ganancias Realizadas', 'Resultado Econ. USD @ TC', 'Efecto FX',
-                'Amort / Cup / Div', 'Ganancia Total'
+                'Ganancias Realizadas', 'Ganancias no Realizadas', 'Amort / Cup / Div',
+                'Ganancia Total', 'Resultado Econ. USD @ TC', 'Efecto FX'
             ]
         else:
             cols_display = [
@@ -1302,6 +1302,7 @@ def main():
             display_df['Resultado Econ. USD @ TC'] = display_df['Resultado Econ. USD @ TC'].apply(lambda x: _fmt_money(x, moneda))
             display_df['Efecto FX'] = display_df['Efecto FX'].apply(lambda x: _fmt_money(x, moneda))
             display_df['Amort / Cup / Div'] = display_df['Amort / Cup / Div'].apply(lambda x: _fmt_money(x, moneda))
+            display_df['Ganancias no Realizadas'] = display_df['Ganancias no Realizadas'].apply(lambda x: _fmt_money(x, moneda))
         else:
             display_df['Amortizaciones'] = display_df['Amortizaciones'].apply(lambda x: _fmt_money(x, moneda))
             display_df['Cupones']        = display_df['Cupones'].apply(lambda x: _fmt_money(x, moneda))
@@ -1315,7 +1316,8 @@ def main():
                          "Valor Actual": st.column_config.TextColumn("Valor Actual", width="small"),
                          "Costo": st.column_config.TextColumn("Costo", width="small"),
                          "Ganancias Realizadas": st.column_config.TextColumn("Gan. Realizadas", width="small"),
-                         "Resultado Econ. USD @ TC": st.column_config.TextColumn("Res. Econ. USD @ TC", width="medium"),
+                         "Ganancias no Realizadas": st.column_config.TextColumn("Gan. no Real.", width="small"),
+                         "Resultado Econ. USD @ TC": st.column_config.TextColumn("Resultado USD @ TC", width="medium"),
                          "Efecto FX": st.column_config.TextColumn("Efecto FX", width="small"),
                          "Amort / Cup / Div": st.column_config.TextColumn("Amort/Cup/Div", width="small"),
                          "Amortizaciones": st.column_config.TextColumn("Amortizaciones", width="small"),
@@ -1330,7 +1332,7 @@ def main():
         if moneda == 'ARS':
             st.caption(
                 "ℹ️ Ganancia Total = Gan. Real. + Gan. no Real. + Amort/Cup/Div. "
-                "También se abre como: Ganancia Total = Res. Econ. USD @ TC + Efecto FX."
+                "También se abre como: Ganancia Total = Resultado USD @ TC + Efecto FX."
             )
         else:
             st.caption(
