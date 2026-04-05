@@ -1199,7 +1199,7 @@ def main():
         total_ganancia_no_r = portfolio_df['Ganancias no Realizadas'].sum()
         pct_no_r            = (total_ganancia_no_r / total_costo * 100) if total_costo > 0 else 0
 
-        total_ganancia = total_ganancia_r + total_ganancia_no_r
+        total_ganancia = total_ganancia_rlz + total_ganancia_r + total_ganancia_no_r
         pct_total      = (total_ganancia / total_costo * 100) if total_costo > 0 else 0
         pct_str        = f"({'▼' if pct_total < 0 else '▲'} {abs(pct_total):.1f}%)"
         summary_row = pd.DataFrame([{
