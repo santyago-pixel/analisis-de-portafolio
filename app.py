@@ -1085,6 +1085,79 @@ def _metric(label, value_str, sub_str=None):
     )
 
 
+def _render_summary_panel(base_items, total_label, total_value, total_sub=None, side_items=None):
+    """Renderiza un resumen superior estilo tablero compacto."""
+    side_items = side_items or []
+    has_side = bool(side_items)
+    cols = st.columns([4.6, 1.7, 2.3] if has_side else [5.5, 2.1])
+
+    left_col = cols[0]
+    total_col = cols[1]
+    side_col = cols[2] if has_side else None
+
+    with left_col:
+        cells = []
+        for i, (label, value) in enumerate(base_items):
+            border = 'border-right:1px solid #E5E7EB;' if i < len(base_items) - 1 else ''
+            cells.append(
+                f'<div style="padding:0.9rem 1rem;{border}">'
+                f'<div style="font-size:0.72rem;font-weight:600;color:#6B7280;letter-spacing:0.4px;'
+                f'text-transform:uppercase;margin-bottom:0.45rem;">{label}</div>'
+                f'<div style="font-size:1.05rem;font-weight:700;color:#1B2333;line-height:1.2;">{value}</div>'
+                f'</div>'
+            )
+        st.markdown(
+            f'<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;'
+            f'box-shadow:0 1px 4px rgba(0,0,0,0.06);overflow:hidden;">'
+            f'<div style="display:grid;grid-template-columns:repeat({len(base_items)}, minmax(0, 1fr));">'
+            f'{"".join(cells)}'
+            f'</div></div>',
+            unsafe_allow_html=True
+        )
+
+    with total_col:
+        delta_html = ''
+        if total_sub:
+            is_neg = str(total_sub).strip().startswith('(') and '▼' in str(total_sub)
+            color = '#DC2626' if is_neg else '#16A34A'
+            delta_html = (
+                f'<div style="font-size:0.82rem;font-weight:700;color:{color};margin-top:0.5rem;">'
+                f'{total_sub}</div>'
+            )
+        st.markdown(
+            f'<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;'
+            f'box-shadow:0 1px 4px rgba(0,0,0,0.06);padding:1rem;min-height:102px;'
+            f'display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;">'
+            f'<div style="font-size:0.74rem;font-weight:600;color:#6B7280;letter-spacing:0.45px;'
+            f'text-transform:uppercase;margin-bottom:0.45rem;">{total_label}</div>'
+            f'<div style="font-size:1.45rem;font-weight:800;color:#1B2333;line-height:1.1;">{total_value}</div>'
+            f'{delta_html}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+    if has_side and side_col is not None:
+        with side_col:
+            rows = []
+            for i, (label, value) in enumerate(side_items):
+                border = 'border-bottom:1px solid #E5E7EB;' if i < len(side_items) - 1 else ''
+                rows.append(
+                    f'<div style="display:flex;justify-content:space-between;gap:0.8rem;'
+                    f'padding:0.82rem 0.95rem;{border}">'
+                    f'<div style="font-size:0.76rem;font-weight:600;color:#6B7280;letter-spacing:0.35px;'
+                    f'text-transform:uppercase;">{label}</div>'
+                    f'<div style="font-size:1.02rem;font-weight:700;color:#1B2333;text-align:right;">{value}</div>'
+                    f'</div>'
+                )
+            st.markdown(
+                f'<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;'
+                f'box-shadow:0 1px 4px rgba(0,0,0,0.06);overflow:hidden;">'
+                f'{"".join(rows)}'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+
 def _section_header(title, subtitle=None):
     """Encabezado de sección con barra azul lateral, título y subtítulo opcional.
 
@@ -1255,26 +1328,34 @@ def main():
         pct_total      = (total_ganancia / total_costo * 100) if total_costo > 0 else 0
         pct_str        = f"({'▼' if pct_total < 0 else '▲'} {abs(pct_total):.1f}%)"
         if moneda == 'ARS':
-            summary_row = pd.DataFrame([{
-                'Valor de Mercado':       _fmt_money(total_valor_mercado, moneda),
-                'Costo Total':            _fmt_money(total_costo, moneda),
-                'Gan. x Ventas':          _fmt_money(total_ganancia_rlz, moneda),
-                'Gan. no Real.':          _fmt_money(total_ganancia_no_r, moneda),
-                'Pagos':                  _fmt_money(total_amort + total_cup + total_div, moneda),
-                'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
-                'Resultado USD @ TC':     _fmt_money(total_res_usd_tc, moneda),
-                'Efecto FX':              _fmt_money(total_efecto_fx, moneda),
-            }])
+            _render_summary_panel(
+                base_items=[
+                    ("Valor de Mercado", _fmt_money(total_valor_mercado, moneda)),
+                    ("Costo Total", _fmt_money(total_costo, moneda)),
+                    ("Pagos", _fmt_money(total_ganancia_r, moneda)),
+                    ("Gan. x Ventas", _fmt_money(total_ganancia_rlz, moneda)),
+                ],
+                total_label="Ganancia Total",
+                total_value=_fmt_money(total_ganancia, moneda),
+                total_sub=pct_str,
+                side_items=[
+                    ("Gan. no Real.", _fmt_money(total_ganancia_no_r, moneda)),
+                    ("Resultado USD @ TC", _fmt_money(total_res_usd_tc, moneda)),
+                    ("Efecto FX", _fmt_money(total_efecto_fx, moneda)),
+                ],
+            )
         else:
-            summary_row = pd.DataFrame([{
-                'Valor de Mercado':       _fmt_money(total_valor_mercado, moneda),
-                'Costo Total':            _fmt_money(total_costo, moneda),
-                'Gan. x Ventas':          _fmt_money(total_ganancia_rlz, moneda),
-                'Gan. no Real.':          _fmt_money(total_ganancia_no_r, moneda),
-                'Pagos':                  _fmt_money(total_amort + total_cup + total_div, moneda),
-                'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
-            }])
-        st.dataframe(summary_row, use_container_width=True, hide_index=True)
+            _render_summary_panel(
+                base_items=[
+                    ("Valor de Mercado", _fmt_money(total_valor_mercado, moneda)),
+                    ("Costo Total", _fmt_money(total_costo, moneda)),
+                    ("Pagos", _fmt_money(total_ganancia_r, moneda)),
+                    ("Gan. x Ventas", _fmt_money(total_ganancia_rlz, moneda)),
+                ],
+                total_label="Ganancia Total",
+                total_value=_fmt_money(total_ganancia, moneda),
+                total_sub=pct_str,
+            )
 
         if moneda == 'ARS':
             cols_display = [
