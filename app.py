@@ -1315,15 +1315,15 @@ def main():
                          "Precio Actual": st.column_config.TextColumn("Precio Actual", width="small"),
                          "Valor Actual": st.column_config.TextColumn("Valor Actual", width="small"),
                          "Costo": st.column_config.TextColumn("Costo", width="small"),
-                         "Ganancias Realizadas": st.column_config.TextColumn("Gan. Realizadas", width="small"),
+                         "Ganancias Realizadas": st.column_config.TextColumn("Gan. Realizadas", width="medium"),
                          "Ganancias no Realizadas": st.column_config.TextColumn("Gan. no Real.", width="small"),
-                         "Resultado Econ. USD @ TC": st.column_config.TextColumn("Resultado USD @ TC", width="medium"),
+                         "Resultado Econ. USD @ TC": st.column_config.TextColumn("Resultado USD @ TC", width="small"),
                          "Efecto FX": st.column_config.TextColumn("Efecto FX", width="small"),
-                         "Amort / Cup / Div": st.column_config.TextColumn("Amort/Cup/Div", width="small"),
+                         "Amort / Cup / Div": st.column_config.TextColumn("Amort/Cup/Div", width="medium"),
                          "Amortizaciones": st.column_config.TextColumn("Amortizaciones", width="small"),
                          "Cupones": st.column_config.TextColumn("Cupones", width="small"),
                          "Dividendos": st.column_config.TextColumn("Dividendos", width="small"),
-                         "Ganancia Total": st.column_config.TextColumn("Ganancia Total", width="small"),
+                         "Ganancia Total": st.column_config.TextColumn("Ganancia Total", width="medium"),
                      })
 
         if '_nota' in portfolio_df.columns:
