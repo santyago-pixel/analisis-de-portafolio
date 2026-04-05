@@ -1089,7 +1089,7 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
     """Renderiza un resumen superior estilo tablero compacto."""
     side_items = side_items or []
     has_side = bool(side_items)
-    cols = st.columns([4.6, 1.7, 2.3] if has_side else [5.5, 2.1])
+    cols = st.columns([4.85, 1.95, 2.2] if has_side else [5.7, 2.3])
 
     left_col = cols[0]
     total_col = cols[1]
@@ -1100,15 +1100,15 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
         for i, (label, value) in enumerate(base_items):
             border = 'border-right:1px solid #E5E7EB;' if i < len(base_items) - 1 else ''
             cells.append(
-                f'<div style="padding:0.9rem 1rem;{border}">'
-                f'<div style="font-size:0.72rem;font-weight:600;color:#6B7280;letter-spacing:0.4px;'
-                f'text-transform:uppercase;margin-bottom:0.45rem;">{label}</div>'
-                f'<div style="font-size:1.05rem;font-weight:700;color:#1B2333;line-height:1.2;">{value}</div>'
+                f'<div style="padding:0.92rem 1rem 0.88rem;{border}">'
+                f'<div style="font-size:0.8rem;font-weight:600;color:#667085;'
+                f'margin-bottom:0.42rem;white-space:nowrap;">{label}</div>'
+                f'<div style="font-size:1.04rem;font-weight:700;color:#1B2333;line-height:1.2;">{value}</div>'
                 f'</div>'
             )
         st.markdown(
-            f'<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;'
-            f'box-shadow:0 1px 4px rgba(0,0,0,0.06);overflow:hidden;">'
+            f'<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:16px;'
+            f'box-shadow:0 10px 26px rgba(15,23,42,0.05);overflow:hidden;">'
             f'<div style="display:grid;grid-template-columns:repeat({len(base_items)}, minmax(0, 1fr));">'
             f'{"".join(cells)}'
             f'</div></div>',
@@ -1121,16 +1121,17 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
             is_neg = str(total_sub).strip().startswith('(') and '▼' in str(total_sub)
             color = '#DC2626' if is_neg else '#16A34A'
             delta_html = (
-                f'<div style="font-size:0.82rem;font-weight:700;color:{color};margin-top:0.5rem;">'
+                f'<div style="font-size:0.94rem;font-weight:700;color:{color};margin-top:0.48rem;">'
                 f'{total_sub}</div>'
             )
         st.markdown(
-            f'<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;'
-            f'box-shadow:0 1px 4px rgba(0,0,0,0.06);padding:1rem;min-height:102px;'
+            f'<div style="background:linear-gradient(180deg,#FFFFFF 0%,#F7FAFF 100%);'
+            f'border:1px solid #D9E3F0;border-radius:18px;'
+            f'box-shadow:0 12px 28px rgba(15,23,42,0.08);padding:1rem 1.1rem;min-height:128px;'
             f'display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;">'
-            f'<div style="font-size:0.74rem;font-weight:600;color:#6B7280;letter-spacing:0.45px;'
-            f'text-transform:uppercase;margin-bottom:0.45rem;">{total_label}</div>'
-            f'<div style="font-size:1.45rem;font-weight:800;color:#1B2333;line-height:1.1;">{total_value}</div>'
+            f'<div style="font-size:0.9rem;font-weight:700;color:#667085;'
+            f'margin-bottom:0.42rem;">{total_label}</div>'
+            f'<div style="font-size:1.9rem;font-weight:800;color:#122033;line-height:1.05;">{total_value}</div>'
             f'{delta_html}'
             f'</div>',
             unsafe_allow_html=True
@@ -1143,15 +1144,15 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
                 border = 'border-bottom:1px solid #E5E7EB;' if i < len(side_items) - 1 else ''
                 rows.append(
                     f'<div style="display:flex;justify-content:space-between;gap:0.8rem;'
-                    f'padding:0.82rem 0.95rem;{border}">'
-                    f'<div style="font-size:0.76rem;font-weight:600;color:#6B7280;letter-spacing:0.35px;'
-                    f'text-transform:uppercase;">{label}</div>'
-                    f'<div style="font-size:1.02rem;font-weight:700;color:#1B2333;text-align:right;">{value}</div>'
+                    f'align-items:center;padding:0.68rem 0.9rem;{border}">'
+                    f'<div style="font-size:0.8rem;font-weight:600;color:#667085;'
+                    f'white-space:nowrap;">{label}</div>'
+                    f'<div style="font-size:1.06rem;font-weight:700;color:#1B2333;text-align:right;">{value}</div>'
                     f'</div>'
                 )
             st.markdown(
-                f'<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;'
-                f'box-shadow:0 1px 4px rgba(0,0,0,0.06);overflow:hidden;">'
+                f'<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:16px;'
+                f'box-shadow:0 10px 26px rgba(15,23,42,0.05);overflow:hidden;">'
                 f'{"".join(rows)}'
                 f'</div>',
                 unsafe_allow_html=True
