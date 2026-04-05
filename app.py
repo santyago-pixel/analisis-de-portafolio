@@ -1311,19 +1311,19 @@ def main():
         st.dataframe(display_df, use_container_width=True, hide_index=True,
                      column_config={
                          "Activo": st.column_config.TextColumn("Activo", width="small"),
-                         "Nominales": st.column_config.TextColumn("Nominales", width="small"),
-                         "Precio Actual": st.column_config.TextColumn("Precio Actual", width="small"),
-                         "Valor Actual": st.column_config.TextColumn("Valor Actual", width="small"),
+                         "Nominales": st.column_config.TextColumn("Nom.", width="small"),
+                         "Precio Actual": st.column_config.TextColumn("Precio", width="small"),
+                         "Valor Actual": st.column_config.TextColumn("Valor", width="small"),
                          "Costo": st.column_config.TextColumn("Costo", width="small"),
-                         "Ganancias Realizadas": st.column_config.TextColumn("Gan. Realizadas", width="medium"),
-                         "Ganancias no Realizadas": st.column_config.TextColumn("Gan. no Real.", width="small"),
-                         "Resultado Econ. USD @ TC": st.column_config.TextColumn("Resultado USD @ TC", width="small"),
-                         "Efecto FX": st.column_config.TextColumn("Efecto FX", width="small"),
-                         "Amort / Cup / Div": st.column_config.TextColumn("Amort/Cup/Div", width="medium"),
+                         "Ganancias Realizadas": st.column_config.TextColumn("Real.", width="small"),
+                         "Ganancias no Realizadas": st.column_config.TextColumn("No real.", width="small"),
+                         "Resultado Econ. USD @ TC": st.column_config.TextColumn("USD@TC", width="small"),
+                         "Efecto FX": st.column_config.TextColumn("FX", width="small"),
+                         "Amort / Cup / Div": st.column_config.TextColumn("ACD", width="small"),
                          "Amortizaciones": st.column_config.TextColumn("Amortizaciones", width="small"),
                          "Cupones": st.column_config.TextColumn("Cupones", width="small"),
                          "Dividendos": st.column_config.TextColumn("Dividendos", width="small"),
-                         "Ganancia Total": st.column_config.TextColumn("Ganancia Total", width="medium"),
+                         "Ganancia Total": st.column_config.TextColumn("Total", width="small"),
                      })
 
         if '_nota' in portfolio_df.columns:
