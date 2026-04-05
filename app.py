@@ -1277,14 +1277,19 @@ def main():
             cols_display = [
                 'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
                 'Ganancias Realizadas', 'Resultado Econ. USD @ TC', 'Efecto FX',
-                'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
+                'Amort / Cup / Div', 'Ganancia Total'
             ]
         else:
             cols_display = [
                 'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
                 'Ganancias Realizadas', 'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
             ]
-        display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].copy()
+        display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'}).copy()
+        if moneda == 'ARS':
+            display_df['Amort / Cup / Div'] = (
+                display_df['Amortizaciones'] + display_df['Cupones'] + display_df['Dividendos']
+            )
+        display_df = display_df[cols_display].copy()
         display_df['Nominales']      = display_df['Nominales'].apply(_fmt_number)
         display_df['Precio Actual']  = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
         display_df['Valor Actual']   = display_df['Valor Actual'].apply(lambda x: _fmt_money(x, moneda))
@@ -1293,12 +1298,28 @@ def main():
         if moneda == 'ARS':
             display_df['Resultado Econ. USD @ TC'] = display_df['Resultado Econ. USD @ TC'].apply(lambda x: _fmt_money(x, moneda))
             display_df['Efecto FX'] = display_df['Efecto FX'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Amortizaciones'] = display_df['Amortizaciones'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Cupones']        = display_df['Cupones'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Dividendos']     = display_df['Dividendos'].apply(lambda x: _fmt_money(x, moneda))
+            display_df['Amort / Cup / Div'] = display_df['Amort / Cup / Div'].apply(lambda x: _fmt_money(x, moneda))
+        else:
+            display_df['Amortizaciones'] = display_df['Amortizaciones'].apply(lambda x: _fmt_money(x, moneda))
+            display_df['Cupones']        = display_df['Cupones'].apply(lambda x: _fmt_money(x, moneda))
+            display_df['Dividendos']     = display_df['Dividendos'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Ganancia Total'] = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
         st.dataframe(display_df, use_container_width=True, hide_index=True,
-                     column_config={"Activo": st.column_config.TextColumn("Activo", width="medium")})
+                     column_config={
+                         "Activo": st.column_config.TextColumn("Activo", width="medium"),
+                         "Nominales": st.column_config.TextColumn("Nominales", width="small"),
+                         "Precio Actual": st.column_config.TextColumn("Precio Actual", width="small"),
+                         "Valor Actual": st.column_config.TextColumn("Valor Actual", width="small"),
+                         "Costo": st.column_config.TextColumn("Costo", width="small"),
+                         "Ganancias Realizadas": st.column_config.TextColumn("Gan. Realizadas", width="small"),
+                         "Resultado Econ. USD @ TC": st.column_config.TextColumn("Res. Econ. USD @ TC", width="medium"),
+                         "Efecto FX": st.column_config.TextColumn("Efecto FX", width="small"),
+                         "Amort / Cup / Div": st.column_config.TextColumn("Amort/Cup/Div", width="small"),
+                         "Amortizaciones": st.column_config.TextColumn("Amortizaciones", width="small"),
+                         "Cupones": st.column_config.TextColumn("Cupones", width="small"),
+                         "Dividendos": st.column_config.TextColumn("Dividendos", width="small"),
+                         "Ganancia Total": st.column_config.TextColumn("Ganancia Total", width="small"),
+                     })
 
         if '_nota' in portfolio_df.columns:
             for nota in portfolio_df[portfolio_df['_nota'] != '']['_nota']:
