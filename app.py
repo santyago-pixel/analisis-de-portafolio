@@ -420,6 +420,21 @@ def _get_current_price(asset, asset_prices, moneda, fx_rates,
     return price_usd
 
 
+def _get_end_price(asset, asset_prices, fecha_fin, moneda, fx_rates,
+                   live_prices=None, live_fx=None):
+    """Precio al cierre del período.
+
+    Para rangos históricos usa el último precio disponible <= fecha_fin.
+    Si fecha_fin es hoy y existe precio en vivo, usa ese mark actual.
+    """
+    fecha_fin_ts = pd.to_datetime(fecha_fin).normalize()
+    today_ts = pd.Timestamp.today().normalize()
+    if fecha_fin_ts == today_ts:
+        return _get_current_price(asset, asset_prices, moneda, fx_rates,
+                                  live_prices, live_fx)
+    return _get_price_at_date(asset_prices, fecha_fin, moneda, fx_rates)
+
+
 # ─────────────────────────────────────────────
 # Helpers internos
 # ─────────────────────────────────────────────
@@ -565,6 +580,7 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
         # con fallback a Monto_USD × TC_cierre si Monto ARS no está disponible.
         current_nominals    = 0
         costo_unit_promedio = 0.0
+        ganancia_realizada  = 0.0
         total_amort         = 0
         total_cupones       = 0
         total_dividendos    = 0
@@ -577,6 +593,7 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
                 current_nominals   += op['Cantidad']
                 costo_unit_promedio = (costo_prev + monto) / current_nominals
             elif tipo == 'Venta':
+                ganancia_realizada += monto - (op['Cantidad'] * costo_unit_promedio)
                 current_nominals -= op['Cantidad']
             else:
                 categoria = _clasificar_operacion(tipo)
@@ -595,7 +612,10 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
                                             live_prices, live_fx)
         valor_actual   = current_nominals * current_price
         ganancia_no_r  = valor_actual - costo_posicion
-        ganancia_total = ganancia_no_r + total_amort + total_cupones + total_dividendos
+        ganancia_total = (
+            ganancia_realizada + ganancia_no_r
+            + total_amort + total_cupones + total_dividendos
+        )
 
         portfolio_data.append({
             'Activo':                  asset,
@@ -603,6 +623,7 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
             'Precio Actual':           current_price,
             '_Valor Actual':           valor_actual,
             'Costo':                   costo_posicion,
+            'Ganancias Realizadas':    ganancia_realizada,
             'Amortizaciones':          total_amort,
             'Cupones':                 total_cupones,
             'Dividendos':              total_dividendos,
@@ -764,8 +785,8 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
             )
 
         precio_inicio = _get_price_at_date(asset_prices, fecha_inicio, moneda, fx_rates)
-        precio_fin    = _get_current_price(asset, asset_prices, moneda, fx_rates,
-                                           live_prices, live_fx)
+        precio_fin    = _get_end_price(asset, asset_prices, fecha_fin, moneda, fx_rates,
+                                       live_prices, live_fx)
 
         # Red de seguridad: si después de la compra sintética los nominales
         # siguen siendo negativos hay un error de datos en el Excel.
@@ -802,7 +823,7 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
             'Activo':               asset,
             'Nominales':            nom_fin,
             'PPP':                  ppp,
-            'Precio Actual':        precio_fin,
+            'Precio al Fin':        precio_fin,
             'Valor Actual':         valor_fin,
             'Valor al Inicio':      valor_inicio_display,
             '_Valor Inicio Real':   valor_inicio,
@@ -892,7 +913,8 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo,
 
     # Me7: fila de cierre siempre presente (muestra $0 si la posición fue cerrada)
     if nom_fin > 0:
-        precio_fin = _get_current_price(activo, ap, moneda, fx_rates, live_prices, live_fx)
+        precio_fin = _get_end_price(activo, ap, fecha_fin, moneda, fx_rates,
+                                    live_prices, live_fx)
         detalle_data.append({
             'Fecha':     fecha_fin,
             'Operación': 'Valor Final',
@@ -1169,6 +1191,7 @@ def main():
     else:
         total_valor_mercado = portfolio_df['_Valor Actual'].sum()
         total_costo         = portfolio_df['Costo'].sum()
+        total_ganancia_rlz  = portfolio_df['Ganancias Realizadas'].sum()
         total_amort         = portfolio_df['Amortizaciones'].sum()
         total_cup           = portfolio_df['Cupones'].sum()
         total_div           = portfolio_df['Dividendos'].sum()
@@ -1182,6 +1205,7 @@ def main():
         summary_row = pd.DataFrame([{
             'Valor de Mercado':       _fmt_money(total_valor_mercado, moneda),
             'Costo Total':            _fmt_money(total_costo, moneda),
+            'Gan. Realizadas':        _fmt_money(total_ganancia_rlz, moneda),
             'Amort/Cupones/Div':      _fmt_money(total_amort + total_cup + total_div, moneda),
             'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
         }])
@@ -1189,13 +1213,14 @@ def main():
 
         cols_display = [
             'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
-            'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
+            'Ganancias Realizadas', 'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
         ]
         display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].copy()
         display_df['Nominales']      = display_df['Nominales'].apply(_fmt_number)
         display_df['Precio Actual']  = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
         display_df['Valor Actual']   = display_df['Valor Actual'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Costo']          = display_df['Costo'].apply(lambda x: _fmt_money(x, moneda))
+        display_df['Ganancias Realizadas'] = display_df['Ganancias Realizadas'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Amortizaciones'] = display_df['Amortizaciones'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Cupones']        = display_df['Cupones'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Dividendos']     = display_df['Dividendos'].apply(lambda x: _fmt_money(x, moneda))
@@ -1274,16 +1299,16 @@ def main():
         evo_display['Compras'] = evo_display['Compras Adicionales']
         evo_display = evo_display[
             ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
-             'Amort / Cup / Div', 'PPP', 'Precio Actual', 'Valor Actual',
+             'Amort / Cup / Div', 'PPP', 'Precio al Fin', 'Valor Actual',
              'Ganancia Total', 'Retorno']
         ]
         evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
         evo_display['Retorno'] = evo_display['Retorno'].apply(
             lambda x: f"{'▼' if x < 0 else '▲'} {abs(x):.1f}%" if pd.notna(x) else "-"
         )
-        for col in ['Precio Actual', 'PPP', 'Valor Actual', 'Valor al Inicio',
+        for col in ['Precio al Fin', 'PPP', 'Valor Actual', 'Valor al Inicio',
                     'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
-            if col in ('Precio Actual', 'PPP'):
+            if col in ('Precio al Fin', 'PPP'):
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
             else:
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
