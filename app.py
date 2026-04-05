@@ -578,23 +578,39 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
         # Todos los montos se calculan en la moneda seleccionada (USD o ARS).
         # En ARS se usa el TC efectivo de cada operación (columna Monto ARS),
         # con fallback a Monto_USD × TC_cierre si Monto ARS no está disponible.
-        current_nominals    = 0
-        costo_unit_promedio = 0.0
-        ganancia_realizada  = 0.0
+        current_nominals     = 0
+        costo_unit_usd       = 0.0
+        costo_unit_ars       = 0.0
+        ganancia_realizada   = 0.0
+        gan_real_precio_ars  = 0.0
+        gan_real_fx_ars      = 0.0
         total_amort         = 0
         total_cupones       = 0
         total_dividendos    = 0
 
         for _, op in ops.iterrows():
             tipo = op['Tipo'].strip()
-            monto = _get_monto(op, moneda, fx_rates)
+            qty = float(op['Cantidad']) if pd.notna(op.get('Cantidad')) else 0.0
+            monto_usd = float(op.get('Monto', 0.0)) if pd.notna(op.get('Monto')) else 0.0
+            monto_ars = _get_monto(op, 'ARS', fx_rates)
+            monto = monto_ars if moneda == 'ARS' else monto_usd
             if tipo == 'Compra':
-                costo_prev          = current_nominals * costo_unit_promedio
-                current_nominals   += op['Cantidad']
-                costo_unit_promedio = (costo_prev + monto) / current_nominals
+                costo_prev_usd    = current_nominals * costo_unit_usd
+                costo_prev_ars    = current_nominals * costo_unit_ars
+                current_nominals += qty
+                costo_unit_usd    = (costo_prev_usd + monto_usd) / current_nominals
+                costo_unit_ars    = (costo_prev_ars + monto_ars) / current_nominals
             elif tipo == 'Venta':
-                ganancia_realizada += monto - (op['Cantidad'] * costo_unit_promedio)
-                current_nominals -= op['Cantidad']
+                costo_unit_sel = costo_unit_ars if moneda == 'ARS' else costo_unit_usd
+                ganancia_realizada += monto - (qty * costo_unit_sel)
+
+                sale_fx = (monto_ars / monto_usd) if monto_usd else _get_fx(fx_rates, op['Fecha'])
+                sale_price_usd = float(op['Precio']) if pd.notna(op.get('Precio')) else (monto_usd / qty if qty else 0.0)
+                hist_fx = (costo_unit_ars / costo_unit_usd) if costo_unit_usd else 0.0
+                gan_real_precio_ars += qty * (sale_price_usd - costo_unit_usd) * sale_fx
+                gan_real_fx_ars     += qty * costo_unit_usd * (sale_fx - hist_fx)
+
+                current_nominals -= qty
             else:
                 categoria = _clasificar_operacion(tipo)
                 if categoria == 'amortizacion':
@@ -607,6 +623,7 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
         if current_nominals <= 0:
             continue
 
+        costo_unit_promedio = costo_unit_ars if moneda == 'ARS' else costo_unit_usd
         costo_posicion = current_nominals * costo_unit_promedio
         current_price  = _get_current_price(asset, asset_prices, moneda, fx_rates,
                                             live_prices, live_fx)
@@ -617,6 +634,20 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
             + total_amort + total_cupones + total_dividendos
         )
 
+        ganancia_precio = np.nan
+        ganancia_fx = np.nan
+        if moneda == 'ARS':
+            current_price_usd = _get_current_price(asset, asset_prices, 'USD', fx_rates,
+                                                   live_prices, live_fx)
+            current_fx = (current_price / current_price_usd) if current_price_usd else (
+                live_fx if live_fx is not None else _get_fx(fx_rates, pd.Timestamp.now())
+            )
+            hist_fx = (costo_unit_ars / costo_unit_usd) if costo_unit_usd else 0.0
+            gan_unreal_precio_ars = current_nominals * (current_price_usd - costo_unit_usd) * current_fx
+            gan_unreal_fx_ars     = current_nominals * costo_unit_usd * (current_fx - hist_fx)
+            ganancia_precio = gan_real_precio_ars + gan_unreal_precio_ars
+            ganancia_fx     = gan_real_fx_ars + gan_unreal_fx_ars
+
         portfolio_data.append({
             'Activo':                  asset,
             'Nominales':               current_nominals,
@@ -624,6 +655,8 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
             '_Valor Actual':           valor_actual,
             'Costo':                   costo_posicion,
             'Ganancias Realizadas':    ganancia_realizada,
+            'Gan. Precio':             ganancia_precio,
+            'Gan. FX':                 ganancia_fx,
             'Amortizaciones':          total_amort,
             'Cupones':                 total_cupones,
             'Dividendos':              total_dividendos,
@@ -1192,6 +1225,8 @@ def main():
         total_valor_mercado = portfolio_df['_Valor Actual'].sum()
         total_costo         = portfolio_df['Costo'].sum()
         total_ganancia_rlz  = portfolio_df['Ganancias Realizadas'].sum()
+        total_gan_precio    = portfolio_df['Gan. Precio'].sum() if 'Gan. Precio' in portfolio_df.columns else np.nan
+        total_gan_fx        = portfolio_df['Gan. FX'].sum() if 'Gan. FX' in portfolio_df.columns else np.nan
         total_amort         = portfolio_df['Amortizaciones'].sum()
         total_cup           = portfolio_df['Cupones'].sum()
         total_div           = portfolio_df['Dividendos'].sum()
@@ -1202,25 +1237,46 @@ def main():
         total_ganancia = total_ganancia_rlz + total_ganancia_r + total_ganancia_no_r
         pct_total      = (total_ganancia / total_costo * 100) if total_costo > 0 else 0
         pct_str        = f"({'▼' if pct_total < 0 else '▲'} {abs(pct_total):.1f}%)"
-        summary_row = pd.DataFrame([{
-            'Valor de Mercado':       _fmt_money(total_valor_mercado, moneda),
-            'Costo Total':            _fmt_money(total_costo, moneda),
-            'Gan. Realizadas':        _fmt_money(total_ganancia_rlz, moneda),
-            'Amort/Cupones/Div':      _fmt_money(total_amort + total_cup + total_div, moneda),
-            'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
-        }])
+        if moneda == 'ARS':
+            summary_row = pd.DataFrame([{
+                'Valor de Mercado':       _fmt_money(total_valor_mercado, moneda),
+                'Costo Total':            _fmt_money(total_costo, moneda),
+                'Gan. Realizadas':        _fmt_money(total_ganancia_rlz, moneda),
+                'Gan. Precio':            _fmt_money(total_gan_precio, moneda),
+                'Gan. FX':                _fmt_money(total_gan_fx, moneda),
+                'Amort/Cupones/Div':      _fmt_money(total_amort + total_cup + total_div, moneda),
+                'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
+            }])
+        else:
+            summary_row = pd.DataFrame([{
+                'Valor de Mercado':       _fmt_money(total_valor_mercado, moneda),
+                'Costo Total':            _fmt_money(total_costo, moneda),
+                'Gan. Realizadas':        _fmt_money(total_ganancia_rlz, moneda),
+                'Amort/Cupones/Div':      _fmt_money(total_amort + total_cup + total_div, moneda),
+                'Ganancia Total':         f"{_fmt_money(total_ganancia, moneda)} {pct_str}",
+            }])
         st.dataframe(summary_row, use_container_width=True, hide_index=True)
 
-        cols_display = [
-            'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
-            'Ganancias Realizadas', 'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
-        ]
+        if moneda == 'ARS':
+            cols_display = [
+                'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
+                'Ganancias Realizadas', 'Gan. Precio', 'Gan. FX',
+                'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
+            ]
+        else:
+            cols_display = [
+                'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
+                'Ganancias Realizadas', 'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
+            ]
         display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].copy()
         display_df['Nominales']      = display_df['Nominales'].apply(_fmt_number)
         display_df['Precio Actual']  = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
         display_df['Valor Actual']   = display_df['Valor Actual'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Costo']          = display_df['Costo'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Ganancias Realizadas'] = display_df['Ganancias Realizadas'].apply(lambda x: _fmt_money(x, moneda))
+        if moneda == 'ARS':
+            display_df['Gan. Precio'] = display_df['Gan. Precio'].apply(lambda x: _fmt_money(x, moneda))
+            display_df['Gan. FX']     = display_df['Gan. FX'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Amortizaciones'] = display_df['Amortizaciones'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Cupones']        = display_df['Cupones'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Dividendos']     = display_df['Dividendos'].apply(lambda x: _fmt_money(x, moneda))
@@ -1231,11 +1287,17 @@ def main():
         if '_nota' in portfolio_df.columns:
             for nota in portfolio_df[portfolio_df['_nota'] != '']['_nota']:
                 st.caption(nota)
-        st.caption(
-            "ℹ️ Amortizaciones, Cupones y Dividendos corresponden únicamente a los flujos "
-            "cobrados desde la apertura de la posición actual. Los flujos de posiciones "
-            "anteriores del mismo activo (antes del último reset) se reflejan en la Sección 2."
-        )
+        if moneda == 'ARS':
+            st.caption(
+                "ℹ️ En ARS, la ganancia se abre en efecto precio y efecto FX. "
+                "Ganancia Total = Gan. Precio + Gan. FX + Amortizaciones + Cupones + Dividendos."
+            )
+        else:
+            st.caption(
+                "ℹ️ Amortizaciones, Cupones y Dividendos corresponden únicamente a los flujos "
+                "cobrados desde la apertura de la posición actual. Los flujos de posiciones "
+                "anteriores del mismo activo (antes del último reset) se reflejan en la Sección 2."
+            )
         csv = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'})[cols_display].to_csv(index=False)
         st.download_button(
             label="📥 Descargar CSV",
