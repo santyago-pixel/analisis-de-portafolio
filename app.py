@@ -1135,6 +1135,7 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
 
     if total_col is not None:
         with total_col:
+            compact_total = not has_side
             delta_html = ''
             if total_sub:
                 is_neg = str(total_sub).strip().startswith('(') and '▼' in str(total_sub)
@@ -1144,13 +1145,15 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
                     f'{total_sub}</div>'
                 )
             st.markdown(
-                f'<div style="background:linear-gradient(180deg,#FFFFFF 0%,#F7FAFF 100%);'
-                f'border:1px solid #D9E3F0;border-radius:18px;'
-                f'box-shadow:0 12px 28px rgba(15,23,42,0.08);padding:0.95rem 1rem;min-height:118px;'
-                f'display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;">'
-                f'<div style="font-size:0.82rem;font-weight:700;color:#667085;'
+                f'<div style="background:{"#FFFFFF" if compact_total else "linear-gradient(180deg,#FFFFFF 0%,#F7FAFF 100%)"};'
+                f'border:1px solid {"#E5E7EB" if compact_total else "#D9E3F0"};border-radius:{16 if compact_total else 18}px;'
+                f'box-shadow:{"0 10px 26px rgba(15,23,42,0.05)" if compact_total else "0 12px 28px rgba(15,23,42,0.08)"};'
+                f'padding:{"0.86rem 0.95rem 0.82rem" if compact_total else "0.95rem 1rem"};'
+                f'min-height:{"auto" if compact_total else "118px"};'
+                f'display:flex;flex-direction:column;justify-content:center;align-items:{"flex-start" if compact_total else "center"};text-align:{"left" if compact_total else "center"};">'
+                f'<div style="font-size:{"0.8rem" if compact_total else "0.82rem"};font-weight:{600 if compact_total else 700};color:#667085;'
                 f'margin-bottom:0.42rem;">{total_label}</div>'
-                f'<div style="font-size:1.35rem;font-weight:800;color:#122033;line-height:1.08;">{total_value}</div>'
+                f'<div style="font-size:{"1.04rem" if compact_total else "1.35rem"};font-weight:{700 if compact_total else 800};color:#122033;line-height:1.12;">{total_value}</div>'
                 f'{delta_html}'
                 f'</div>',
                 unsafe_allow_html=True
@@ -1165,7 +1168,7 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
                     border = 'border-bottom:1px solid #E5E7EB;' if i < len(group) - 1 else ''
                     rows.append(
                         f'<div style="display:flex;justify-content:space-between;gap:0.8rem;'
-                        f'align-items:center;padding:0.58rem 0.85rem;{border}">'
+                        f'align-items:center;min-height:40px;padding:0 0.85rem;box-sizing:border-box;{border}">'
                         f'<div style="font-size:0.76rem;font-weight:600;color:#667085;'
                         f'white-space:nowrap;">{label}</div>'
                         f'<div style="font-size:0.98rem;font-weight:700;color:#122033;text-align:right;line-height:1.12;">{value}</div>'
@@ -1387,7 +1390,7 @@ def main():
                 ],
                 total_label="Ganancia Total",
                 total_value=_fmt_money(total_ganancia, moneda),
-                total_sub=pct_str,
+                total_sub=None,
             )
 
         st.markdown("<div style='height:1.25rem;'></div>", unsafe_allow_html=True)
