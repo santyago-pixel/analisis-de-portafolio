@@ -1105,15 +1105,7 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
     with left_col:
         left_items = list(base_items)
         if inline_total:
-            total_delta_html = ''
-            if total_sub:
-                is_neg = str(total_sub).strip().startswith('(') and '▼' in str(total_sub)
-                color = '#DC2626' if is_neg else '#16A34A'
-                total_delta_html = (
-                    f'<div style="font-size:0.82rem;font-weight:700;color:{color};margin-top:0.35rem;">'
-                    f'{total_sub}</div>'
-                )
-            left_items.append((total_label, total_value, total_delta_html))
+            left_items.append((total_label, total_value, ''))
         cells = []
         for i, item in enumerate(left_items):
             if len(item) == 3:
@@ -1125,7 +1117,7 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
             cell_bg = 'background:linear-gradient(180deg,#FFFFFF 0%,#F7FAFF 100%);' if inline_total and i == len(left_items) - 1 else ''
             cell_border = 'border-left:1px solid #D9E3F0;' if inline_total and i == len(left_items) - 1 else ''
             cells.append(
-                f'<div style="padding:0.92rem 1rem 0.88rem;{border}{cell_bg}{cell_border}">'
+                f'<div style="padding:0.86rem 0.95rem 0.82rem;{border}{cell_bg}{cell_border}">'
                 f'<div style="font-size:0.8rem;font-weight:600;color:#667085;'
                 f'margin-bottom:0.42rem;white-space:nowrap;">{label}</div>'
                 f'<div style="font-size:1.04rem;font-weight:700;color:#1B2333;line-height:1.2;">{value}</div>'
@@ -1173,15 +1165,15 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
                     border = 'border-bottom:1px solid #E5E7EB;' if i < len(group) - 1 else ''
                     rows.append(
                         f'<div style="display:flex;justify-content:space-between;gap:0.8rem;'
-                        f'align-items:center;padding:0.82rem 0.95rem;{border}">'
-                        f'<div style="font-size:0.82rem;font-weight:600;color:#667085;'
+                        f'align-items:center;padding:0.72rem 0.9rem;{border}">'
+                        f'<div style="font-size:0.76rem;font-weight:600;color:#667085;'
                         f'white-space:nowrap;">{label}</div>'
-                        f'<div style="font-size:1.35rem;font-weight:800;color:#122033;text-align:right;line-height:1.08;">{value}</div>'
+                        f'<div style="font-size:0.98rem;font-weight:700;color:#122033;text-align:right;line-height:1.12;">{value}</div>'
                         f'</div>'
                     )
                 cards.append(
                     f'<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:16px;'
-                    f'box-shadow:0 10px 26px rgba(15,23,42,0.05);overflow:hidden;min-height:116px;">'
+                    f'box-shadow:0 10px 26px rgba(15,23,42,0.05);overflow:hidden;min-height:96px;">'
                     f'{"".join(rows)}'
                     f'</div>'
                 )
