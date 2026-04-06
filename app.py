@@ -1105,13 +1105,7 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
     with left_col:
         left_items = list(base_items)
         if inline_total:
-            total_formula_html = ''
-            if total_sub:
-                total_formula_html = (
-                    f'<div style="font-size:0.74rem;font-weight:600;color:#667085;'
-                    f'margin-top:0.34rem;line-height:1.15;">{total_sub}</div>'
-                )
-            left_items.append((total_label, total_value, total_formula_html))
+            left_items.append((total_label, total_value, ''))
         cells = []
         for i, item in enumerate(left_items):
             if len(item) == 3:
@@ -1366,18 +1360,18 @@ def main():
         if moneda == 'ARS':
             _render_summary_panel(
                 base_items=[
-                    ("Valor de Mercado (1)", _fmt_money(total_valor_mercado, moneda)),
-                    ("Costo Total (2)", _fmt_money(total_costo, moneda)),
-                    ("Amort Cupones Div (3)", _fmt_money(total_ganancia_r, moneda)),
-                    ("Gan. x Ventas (4)", _fmt_money(total_ganancia_rlz, moneda)),
+                    ('Valor de Mercado <span style="font-size:0.68rem;font-weight:500;">(1)</span>', _fmt_money(total_valor_mercado, moneda)),
+                    ('Costo Total <span style="font-size:0.68rem;font-weight:500;">(2)</span>', _fmt_money(total_costo, moneda)),
+                    ('Amort Cupones Div <span style="font-size:0.68rem;font-weight:500;">(3)</span>', _fmt_money(total_ganancia_r, moneda)),
+                    ('Gan. x Ventas <span style="font-size:0.68rem;font-weight:500;">(4)</span>', _fmt_money(total_ganancia_rlz, moneda)),
                 ],
-                total_label="Ganancia Total",
+                total_label='Ganancia <span style="font-size:0.68rem;font-weight:500;">(1) + (3) + (4) - (2)</span>',
                 total_value=_fmt_money(total_ganancia, moneda),
-                total_sub="(1) + (3) + (4) - (2)",
+                total_sub=None,
                 side_items=[
                     [
-                        ("Gan. Realizadas (3) + (4)", _fmt_money(total_ganancia_rlz + total_ganancia_r, moneda)),
-                        ("Gan. no Real. (1) - (2)", _fmt_money(total_ganancia_no_r, moneda)),
+                        ('Gan. Realizadas <span style="font-size:0.66rem;font-weight:500;">(3) + (4)</span>', _fmt_money(total_ganancia_rlz + total_ganancia_r, moneda)),
+                        ('Gan. no Real. <span style="font-size:0.66rem;font-weight:500;">(1) - (2)</span>', _fmt_money(total_ganancia_no_r, moneda)),
                     ],
                     [
                         ("Efecto Precio/Cobros", _fmt_money(total_res_usd_tc, moneda)),
@@ -1389,12 +1383,12 @@ def main():
         else:
             _render_summary_panel(
                 base_items=[
-                    ("Valor de Mercado (1)", _fmt_money(total_valor_mercado, moneda)),
-                    ("Costo Total (2)", _fmt_money(total_costo, moneda)),
-                    ("Amort Cupones Div (3)", _fmt_money(total_ganancia_r, moneda)),
-                    ("Gan. x Ventas (4)", _fmt_money(total_ganancia_rlz, moneda)),
+                    ('Valor de Mercado <span style="font-size:0.68rem;font-weight:500;">(1)</span>', _fmt_money(total_valor_mercado, moneda)),
+                    ('Costo Total <span style="font-size:0.68rem;font-weight:500;">(2)</span>', _fmt_money(total_costo, moneda)),
+                    ('Amort Cupones Div <span style="font-size:0.68rem;font-weight:500;">(3)</span>', _fmt_money(total_ganancia_r, moneda)),
+                    ('Gan. x Ventas <span style="font-size:0.68rem;font-weight:500;">(4)</span>', _fmt_money(total_ganancia_rlz, moneda)),
                 ],
-                total_label="Ganancia Total",
+                total_label='Ganancia <span style="font-size:0.68rem;font-weight:500;">(1) + (3) + (4) - (2)</span>',
                 total_value=_fmt_money(total_ganancia, moneda),
                 total_sub=None,
             )
