@@ -1362,7 +1362,7 @@ def main():
                 base_items=[
                     ("Valor de Mercado", _fmt_money(total_valor_mercado, moneda)),
                     ("Costo Total", _fmt_money(total_costo, moneda)),
-                    ("Pagos", _fmt_money(total_ganancia_r, moneda)),
+                    ("Cobros Amort/Cup/Div", _fmt_money(total_ganancia_r, moneda)),
                     ("Gan. x Ventas", _fmt_money(total_ganancia_rlz, moneda)),
                 ],
                 total_label="Ganancia Total",
@@ -1370,11 +1370,11 @@ def main():
                 total_sub=pct_str,
                 side_items=[
                     [
-                        ("Gan. x Ventas", _fmt_money(total_ganancia_rlz, moneda)),
+                        ("Gan. Realizadas", _fmt_money(total_ganancia_rlz + total_ganancia_r, moneda)),
                         ("Gan. no Real.", _fmt_money(total_ganancia_no_r, moneda)),
                     ],
                     [
-                        ("Resultado USD @ TC", _fmt_money(total_res_usd_tc, moneda)),
+                        ("Efecto Precio/Cobros", _fmt_money(total_res_usd_tc, moneda)),
                         ("Efecto FX", _fmt_money(total_efecto_fx, moneda)),
                     ],
                 ],
@@ -1385,7 +1385,7 @@ def main():
                 base_items=[
                     ("Valor de Mercado", _fmt_money(total_valor_mercado, moneda)),
                     ("Costo Total", _fmt_money(total_costo, moneda)),
-                    ("Pagos", _fmt_money(total_ganancia_r, moneda)),
+                    ("Cobros Amort/Cup/Div", _fmt_money(total_ganancia_r, moneda)),
                     ("Gan. x Ventas", _fmt_money(total_ganancia_rlz, moneda)),
                 ],
                 total_label="Ganancia Total",
@@ -1404,13 +1404,12 @@ def main():
         else:
             cols_display = [
                 'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
-                'Ganancias Realizadas', 'Amortizaciones', 'Cupones', 'Dividendos', 'Ganancia Total'
+                'Ganancias Realizadas', 'Amort / Cup / Div', 'Ganancia Total'
             ]
         display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'}).copy()
-        if moneda == 'ARS':
-            display_df['Amort / Cup / Div'] = (
-                display_df['Amortizaciones'] + display_df['Cupones'] + display_df['Dividendos']
-            )
+        display_df['Amort / Cup / Div'] = (
+            display_df['Amortizaciones'] + display_df['Cupones'] + display_df['Dividendos']
+        )
         display_df = display_df[cols_display].copy()
         display_df['Nominales']      = display_df['Nominales'].apply(_fmt_number)
         display_df['Precio Actual']  = display_df['Precio Actual'].apply(lambda x: _fmt_price(x, moneda))
@@ -1423,9 +1422,7 @@ def main():
             display_df['Amort / Cup / Div'] = display_df['Amort / Cup / Div'].apply(lambda x: _fmt_money(x, moneda))
             display_df['Ganancias no Realizadas'] = display_df['Ganancias no Realizadas'].apply(lambda x: _fmt_money(x, moneda))
         else:
-            display_df['Amortizaciones'] = display_df['Amortizaciones'].apply(lambda x: _fmt_money(x, moneda))
-            display_df['Cupones']        = display_df['Cupones'].apply(lambda x: _fmt_money(x, moneda))
-            display_df['Dividendos']     = display_df['Dividendos'].apply(lambda x: _fmt_money(x, moneda))
+            display_df['Amort / Cup / Div'] = display_df['Amort / Cup / Div'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Ganancia Total'] = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
         st.dataframe(display_df, use_container_width=True, hide_index=True,
                      column_config={
@@ -1438,7 +1435,7 @@ def main():
                          "Ganancias no Realizadas": st.column_config.TextColumn("No real.", width="small"),
                          "Resultado Econ. USD @ TC": st.column_config.TextColumn("USD@TC", width="small"),
                          "Efecto FX": st.column_config.TextColumn("FX", width="small"),
-                         "Amort / Cup / Div": st.column_config.TextColumn("Pagos", width="small"),
+                         "Amort / Cup / Div": st.column_config.TextColumn("Cobros A/C/D", width="small"),
                          "Amortizaciones": st.column_config.TextColumn("Pagos", width="small"),
                          "Cupones": st.column_config.TextColumn("Pagos", width="small"),
                          "Dividendos": st.column_config.TextColumn("Pagos", width="small"),
@@ -1450,8 +1447,9 @@ def main():
                 st.caption(nota)
         if moneda == 'ARS':
             st.caption(
-                "ℹ️ Ganancia Total = Gan. x Ventas + Gan. no Real. + Pagos. "
-                "También se abre como: Ganancia Total = Resultado USD @ TC + Efecto FX."
+                "ℹ️ Gan. Realizadas = Gan. x Ventas + Cobros Amort/Cup/Div. "
+                "Ganancia Total = Gan. Realizadas + Gan. no Real. "
+                "También se abre como: Ganancia Total = Efecto Precio/Cobros + Efecto FX."
             )
         else:
             st.caption(
@@ -1460,10 +1458,9 @@ def main():
                 "anteriores del mismo activo (antes del último reset) se reflejan en la Sección 2."
             )
         export_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'}).copy()
-        if moneda == 'ARS':
-            export_df['Amort / Cup / Div'] = (
-                export_df['Amortizaciones'] + export_df['Cupones'] + export_df['Dividendos']
-            )
+        export_df['Amort / Cup / Div'] = (
+            export_df['Amortizaciones'] + export_df['Cupones'] + export_df['Dividendos']
+        )
         csv = export_df[cols_display].to_csv(index=False)
         st.download_button(
             label="📥 Descargar CSV",
