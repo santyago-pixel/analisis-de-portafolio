@@ -1105,7 +1105,13 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
     with left_col:
         left_items = list(base_items)
         if inline_total:
-            left_items.append((total_label, total_value, ''))
+            total_formula_html = ''
+            if total_sub:
+                total_formula_html = (
+                    f'<div style="font-size:0.74rem;font-weight:600;color:#667085;'
+                    f'margin-top:0.34rem;line-height:1.15;">{total_sub}</div>'
+                )
+            left_items.append((total_label, total_value, total_formula_html))
         cells = []
         for i, item in enumerate(left_items):
             if len(item) == 3:
@@ -1360,18 +1366,18 @@ def main():
         if moneda == 'ARS':
             _render_summary_panel(
                 base_items=[
-                    ("Valor de Mercado", _fmt_money(total_valor_mercado, moneda)),
-                    ("Costo Total", _fmt_money(total_costo, moneda)),
-                    ("Cobros Amort/Cup/Div", _fmt_money(total_ganancia_r, moneda)),
-                    ("Gan. x Ventas", _fmt_money(total_ganancia_rlz, moneda)),
+                    ("Valor de Mercado (1)", _fmt_money(total_valor_mercado, moneda)),
+                    ("Costo Total (2)", _fmt_money(total_costo, moneda)),
+                    ("Amort Cupones Div (3)", _fmt_money(total_ganancia_r, moneda)),
+                    ("Gan. x Ventas (4)", _fmt_money(total_ganancia_rlz, moneda)),
                 ],
                 total_label="Ganancia Total",
                 total_value=_fmt_money(total_ganancia, moneda),
-                total_sub=pct_str,
+                total_sub="(1) + (3) + (4) - (2)",
                 side_items=[
                     [
-                        ("Gan. Realizadas", _fmt_money(total_ganancia_rlz + total_ganancia_r, moneda)),
-                        ("Gan. no Real.", _fmt_money(total_ganancia_no_r, moneda)),
+                        ("Gan. Realizadas (3) + (4)", _fmt_money(total_ganancia_rlz + total_ganancia_r, moneda)),
+                        ("Gan. no Real. (1) - (2)", _fmt_money(total_ganancia_no_r, moneda)),
                     ],
                     [
                         ("Efecto Precio/Cobros", _fmt_money(total_res_usd_tc, moneda)),
@@ -1383,10 +1389,10 @@ def main():
         else:
             _render_summary_panel(
                 base_items=[
-                    ("Valor de Mercado", _fmt_money(total_valor_mercado, moneda)),
-                    ("Costo Total", _fmt_money(total_costo, moneda)),
-                    ("Cobros Amort/Cup/Div", _fmt_money(total_ganancia_r, moneda)),
-                    ("Gan. x Ventas", _fmt_money(total_ganancia_rlz, moneda)),
+                    ("Valor de Mercado (1)", _fmt_money(total_valor_mercado, moneda)),
+                    ("Costo Total (2)", _fmt_money(total_costo, moneda)),
+                    ("Amort Cupones Div (3)", _fmt_money(total_ganancia_r, moneda)),
+                    ("Gan. x Ventas (4)", _fmt_money(total_ganancia_rlz, moneda)),
                 ],
                 total_label="Ganancia Total",
                 total_value=_fmt_money(total_ganancia, moneda),
@@ -1428,17 +1434,17 @@ def main():
                          "Activo": st.column_config.TextColumn("Activo", width="small"),
                          "Nominales": st.column_config.TextColumn("Nom.", width="small"),
                          "Precio Actual": st.column_config.TextColumn("Precio", width="small"),
-                         "Valor Actual": st.column_config.TextColumn("Valor", width="small"),
-                         "Costo": st.column_config.TextColumn("Costo", width="small"),
-                         "Ganancias Realizadas": st.column_config.TextColumn("Gan. x Ventas", width="small"),
+                         "Valor Actual": st.column_config.TextColumn("Valor de Mercado (1)", width="small"),
+                         "Costo": st.column_config.TextColumn("Costo Total (2)", width="small"),
+                         "Ganancias Realizadas": st.column_config.TextColumn("Gan. x Ventas (4)", width="small"),
                          "Ganancias no Realizadas": st.column_config.TextColumn("No real.", width="small"),
-                         "Resultado Econ. USD @ TC": st.column_config.TextColumn("USD@TC", width="small"),
+                         "Resultado Econ. USD @ TC": st.column_config.TextColumn("Efecto Precio/Cobros", width="small"),
                          "Efecto FX": st.column_config.TextColumn("FX", width="small"),
-                         "Amort / Cup / Div": st.column_config.TextColumn("Cobros A/C/D", width="small"),
+                         "Amort / Cup / Div": st.column_config.TextColumn("Amort Cupones Div (3)", width="small"),
                          "Amortizaciones": st.column_config.TextColumn("Pagos", width="small"),
                          "Cupones": st.column_config.TextColumn("Pagos", width="small"),
                          "Dividendos": st.column_config.TextColumn("Pagos", width="small"),
-                         "Ganancia Total": st.column_config.TextColumn("Total", width="small"),
+                         "Ganancia Total": st.column_config.TextColumn("Ganancia Total", width="small"),
                      })
 
         if '_nota' in portfolio_df.columns:
@@ -1446,8 +1452,9 @@ def main():
                 st.caption(nota)
         if moneda == 'ARS':
             st.caption(
-                "ℹ️ Gan. Realizadas = Gan. x Ventas + Cobros Amort/Cup/Div. "
-                "Ganancia Total = Gan. Realizadas + Gan. no Real. "
+                "ℹ️ Gan. Realizadas = (3) + (4). "
+                "Gan. no Real. = (1) - (2). "
+                "Ganancia Total = (1) + (3) + (4) - (2). "
                 "También se abre como: Ganancia Total = Efecto Precio/Cobros + Efecto FX."
             )
         else:
