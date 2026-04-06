@@ -1398,7 +1398,7 @@ def main():
         if moneda == 'ARS':
             cols_display = [
                 'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
-                'Ganancias Realizadas', 'Ganancias no Realizadas', 'Amort / Cup / Div',
+                'Ganancias Realizadas', 'Amort / Cup / Div',
                 'Ganancia Total', 'Resultado Econ. USD @ TC', 'Efecto FX'
             ]
         else:
