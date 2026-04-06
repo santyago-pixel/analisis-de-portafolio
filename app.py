@@ -1420,7 +1420,6 @@ def main():
             display_df['Resultado Econ. USD @ TC'] = display_df['Resultado Econ. USD @ TC'].apply(lambda x: _fmt_money(x, moneda))
             display_df['Efecto FX'] = display_df['Efecto FX'].apply(lambda x: _fmt_money(x, moneda))
             display_df['Amort / Cup / Div'] = display_df['Amort / Cup / Div'].apply(lambda x: _fmt_money(x, moneda))
-            display_df['Ganancias no Realizadas'] = display_df['Ganancias no Realizadas'].apply(lambda x: _fmt_money(x, moneda))
         else:
             display_df['Amort / Cup / Div'] = display_df['Amort / Cup / Div'].apply(lambda x: _fmt_money(x, moneda))
         display_df['Ganancia Total'] = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
