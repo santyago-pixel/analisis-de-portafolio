@@ -1165,7 +1165,7 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
                     border = 'border-bottom:1px solid #E5E7EB;' if i < len(group) - 1 else ''
                     rows.append(
                         f'<div style="display:flex;justify-content:space-between;gap:0.8rem;'
-                        f'align-items:center;padding:0.72rem 0.9rem;{border}">'
+                        f'align-items:center;padding:0.58rem 0.85rem;{border}">'
                         f'<div style="font-size:0.76rem;font-weight:600;color:#667085;'
                         f'white-space:nowrap;">{label}</div>'
                         f'<div style="font-size:0.98rem;font-weight:700;color:#122033;text-align:right;line-height:1.12;">{value}</div>'
@@ -1173,7 +1173,7 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
                     )
                 cards.append(
                     f'<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:16px;'
-                    f'box-shadow:0 10px 26px rgba(15,23,42,0.05);overflow:hidden;min-height:96px;">'
+                    f'box-shadow:0 10px 26px rgba(15,23,42,0.05);overflow:hidden;min-height:82px;">'
                     f'{"".join(rows)}'
                     f'</div>'
                 )
@@ -1389,6 +1389,8 @@ def main():
                 total_value=_fmt_money(total_ganancia, moneda),
                 total_sub=pct_str,
             )
+
+        st.markdown("<div style='height:1.25rem;'></div>", unsafe_allow_html=True)
 
         if moneda == 'ARS':
             cols_display = [
