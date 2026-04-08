@@ -853,13 +853,10 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         ventas_en_periodo  = sales_fin  - sales_inicio
         ganancia_total     = (valor_fin - valor_inicio - compras_en_periodo) + div_cup_en_periodo + ventas_en_periodo
 
-        # Para activos comprados dentro del período (nom_inicio = 0), mostrar el costo
-        # de compra como "Valor al Inicio". La ganancia se calcula con valor_inicio = 0.
-        valor_inicio_display = valor_inicio if nom_inicio > 0 else compras_en_periodo
-
-        # "Compras Adicionales" = compras sobre posición pre-existente.
-        # Para activos nuevos es 0 (su inversión ya está en Valor al Inicio).
-        compras_adicionales = compras_en_periodo if nom_inicio > 0 else 0
+        # "Valor al Inicio" debe reflejar estrictamente la foto al comienzo del período.
+        # Las compras posteriores se muestran siempre en la columna "Compras".
+        valor_inicio_display = valor_inicio
+        compras_adicionales = compras_en_periodo
 
         # Modified Dietz: retorno por activo ponderado por tiempo de flujos
         retorno_md = _modified_dietz_pct(valor_inicio, valor_fin, flujos_md,
@@ -1534,15 +1531,13 @@ def main():
         summary_evo = pd.DataFrame([{
             'Valor Total':     _fmt_money(evolution_df['Valor Actual'].sum(), moneda),
             'Valor al Inicio': _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda),
-            'Compras':         _fmt_money(evolution_df['Compras Adicionales'].sum(), moneda),
+            'Compras':         _fmt_money(evolution_df['Compras'].sum(), moneda),
             'Ventas + Flujos': _fmt_money(flujos, moneda),
             'Ganancia Total':  f"{_fmt_money(total_gain, moneda)} {pct_str2}",
         }])
         st.dataframe(summary_evo, use_container_width=True, hide_index=True)
 
-        # Tabla de evolución: usar Compras Adicionales para que las columnas cuadren.
         evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True).copy()
-        evo_display['Compras'] = evo_display['Compras Adicionales']
         evo_display = evo_display[
             ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
              'Amort / Cup / Div', 'PPP', 'Precio al Fin', 'Valor Actual',
