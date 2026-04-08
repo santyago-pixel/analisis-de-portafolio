@@ -1073,6 +1073,18 @@ def _fmt_number(x):
     return f"{x:,.0f}" if pd.notna(x) else ""
 
 
+def _style_variation_cell(val):
+    """Colorea variaciones: verde si positiva, rojo si negativa."""
+    if not isinstance(val, str):
+        return ""
+    text = val.strip()
+    if '▼' in text or '(▼' in text or text.startswith('-'):
+        return "color:#DC2626;font-weight:600;"
+    if '▲' in text or '(▲' in text:
+        return "color:#16A34A;font-weight:600;"
+    return ""
+
+
 def _metric(label, value_str, sub_str=None):
     """Card de métrica estilo dashboard financiero.
 
@@ -1542,7 +1554,11 @@ def main():
             'Ventas + Flujos': _fmt_money(flujos, moneda),
             'Ganancia Total':  f"{_fmt_money(total_gain, moneda)} {pct_str2}",
         }])
-        st.dataframe(summary_evo, use_container_width=True, hide_index=True)
+        st.dataframe(
+            summary_evo.style.map(_style_variation_cell, subset=['Ganancia Total']),
+            use_container_width=True,
+            hide_index=True
+        )
 
         evo_display = evolution_df.sort_values('Nominales Fin Período', ascending=False).reset_index(drop=True).copy()
         evo_display = evo_display[
@@ -1561,7 +1577,7 @@ def main():
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
             else:
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
-        st.dataframe(evo_display, use_container_width=True, hide_index=True,
+        st.dataframe(evo_display.style.map(_style_variation_cell, subset=['Retorno']), use_container_width=True, hide_index=True,
                      column_config={
                          "Activo": st.column_config.TextColumn("Activo", width="medium"),
                          "Nominales al Inicio": st.column_config.TextColumn("Nom. Inicio", width="small"),
@@ -1656,7 +1672,11 @@ def main():
             'Valor Final Cash':         _fmt_money(cash_fin, moneda),
             'Ganancia Total':           f"{_fmt_money(ganancia_cash, moneda)} {pct_str_cash}",
         }])
-        st.dataframe(summary_cash, use_container_width=True, hide_index=True)
+        st.dataframe(
+            summary_cash.style.map(_style_variation_cell, subset=['Ganancia Total']),
+            use_container_width=True,
+            hide_index=True
+        )
 
         st.caption(
             "ℹ️ Los retornos (%) se calculan con Modified Dietz: pondera cada flujo "
