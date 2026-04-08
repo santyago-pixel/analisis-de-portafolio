@@ -20,6 +20,42 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning, module='streamlit')
 
+
+def _ensure_extract_workbook() -> tuple[str | None, str | None]:
+    """Genera/actualiza el workbook transformado si existe el extracto fuente.
+
+    Retorna (filename_preferido, warning_msg). Si no hay extracto fuente, cae al
+    workbook legado. Si falla la transformación, informa el warning y cae al
+    mejor archivo disponible.
+    """
+    extract_path = Path("2025_3618.xlsx")
+    base_path = Path("operaciones.xlsx")
+    output_path = Path("extracto_transformado.xlsx")
+    transform_script = Path("utils/transform_extracto.py")
+
+    if not extract_path.exists():
+        return ("operaciones.xlsx" if base_path.exists() else None, None)
+
+    try:
+        needs_refresh = (
+            not output_path.exists()
+            or output_path.stat().st_mtime < extract_path.stat().st_mtime
+            or output_path.stat().st_mtime < base_path.stat().st_mtime
+            or (transform_script.exists() and output_path.stat().st_mtime < transform_script.stat().st_mtime)
+        )
+        if needs_refresh:
+            from utils.transform_extracto import transform_extract_to_legacy
+
+            transform_extract_to_legacy(
+                extract_path=extract_path,
+                base_workbook=base_path,
+                output_path=output_path,
+            )
+        return (str(output_path), None)
+    except Exception as exc:
+        fallback = "operaciones.xlsx" if base_path.exists() else None
+        return (fallback, f"No se pudo regenerar extracto_transformado.xlsx: {exc}")
+
 # ─────────────────────────────────────────────
 # Configuración de la página
 # ─────────────────────────────────────────────
@@ -1355,8 +1391,8 @@ def main():
     # ── Archivo a usar ─────────────────────────────────────────────────────────
     # El uploader está al pie de la página. Su contenido se guarda en session_state
     # para que esté disponible desde el inicio del script en reruns posteriores.
-    default_candidates = ['extracto_transformado.xlsx', 'operaciones.xlsx']
-    filename = next((name for name in default_candidates if Path(name).exists()), 'operaciones.xlsx')
+    auto_filename, auto_warning = _ensure_extract_workbook()
+    filename = auto_filename or 'operaciones.xlsx'
     if st.session_state.get('upload_bytes'):
         if 'upload_id' not in st.session_state:
             st.session_state.upload_id = uuid.uuid4().hex[:12]
@@ -1369,6 +1405,9 @@ def main():
 
     # ── Fecha actual fija = hoy (se muestra en hero card, sin input) ───────────
     fecha_actual = datetime.now().date()
+
+    if auto_warning and not st.session_state.get('upload_bytes'):
+        st.warning(auto_warning)
 
     # ── Carga de datos ─────────────────────────────────────────────────────────
     operaciones, precios, fx_rates, live_prices, live_fx = load_data(filename)
