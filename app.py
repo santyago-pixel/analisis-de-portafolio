@@ -1542,10 +1542,10 @@ def main():
         pct_str2   = f"({'▼' if pct_evo < 0 else '▲'} {abs(pct_evo):.1f}%)"
         _render_summary_panel(
             base_items=[
-                ("Valor Final", _fmt_money(evolution_df['Valor Actual'].sum(), moneda)),
                 ("Valor al Inicio", _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda)),
-                ("Compras", _fmt_money(evolution_df['Compras'].sum(), moneda)),
-                ("Ventas + Flujos", _fmt_money(flujos, moneda)),
+                ("Compras - Ventas", _fmt_money(evolution_df['Compras'].sum() - evolution_df['Ventas'].sum(), moneda)),
+                ("Amort / Cupones / Div", _fmt_money(evolution_df['Amort / Cup / Div'].sum(), moneda)),
+                ("Valor Final", _fmt_money(evolution_df['Valor Actual'].sum(), moneda)),
             ],
             total_label="Resultado",
             total_value=_fmt_money(total_gain, moneda),
