@@ -803,6 +803,7 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         sales_fin  = sales_inicio
         divcup_fin = divcup_inicio
         compras_en_periodo = 0
+        ops_nom_periodo = 0.0
         flujos_md = []  # flujos datados para Modified Dietz por activo
 
         for _, op in ops_en_rango.iterrows():
@@ -810,10 +811,12 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
             monto = _get_monto(op, moneda, fx_rates)
             if tipo == 'Compra':
                 nom_fin            += op['Cantidad']
+                ops_nom_periodo    += op['Cantidad']
                 compras_en_periodo += monto
                 flujos_md.append((op['Fecha'], +monto))
             elif tipo == 'Venta':
                 nom_fin   -= op['Cantidad']
+                ops_nom_periodo -= op['Cantidad']
                 sales_fin += monto
                 flujos_md.append((op['Fecha'], -monto))
             elif _clasificar_operacion(tipo):
@@ -890,6 +893,10 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         evolution_data.append({
             'Activo':               asset,
             'Nominales':            nom_fin,
+            'Nominales al Inicio':  nom_inicio,
+            'Operaciones del Período': ops_nom_periodo,
+            'Nominales Fin Período': nom_fin,
+            'Costo':                costo_ppp,
             'PPP':                  ppp,
             'Precio al Fin':        precio_fin,
             'Valor Actual':         valor_fin,
@@ -1537,24 +1544,37 @@ def main():
         }])
         st.dataframe(summary_evo, use_container_width=True, hide_index=True)
 
-        evo_display = evolution_df.sort_values('Nominales', ascending=False).reset_index(drop=True).copy()
+        evo_display = evolution_df.sort_values('Nominales Fin Período', ascending=False).reset_index(drop=True).copy()
         evo_display = evo_display[
-            ['Activo', 'Nominales', 'Valor al Inicio', 'Compras', 'Ventas',
-             'Amort / Cup / Div', 'PPP', 'Precio al Fin', 'Valor Actual',
-             'Ganancia Total', 'Retorno']
+            ['Activo', 'Nominales al Inicio', 'Valor al Inicio', 'Operaciones del Período',
+             'Nominales Fin Período', 'Costo', 'PPP', 'Amort / Cup / Div',
+             'Precio al Fin', 'Valor Actual', 'Ganancia Total', 'Retorno']
         ]
-        evo_display['Nominales'] = evo_display['Nominales'].apply(_fmt_number)
+        for col in ['Nominales al Inicio', 'Operaciones del Período', 'Nominales Fin Período']:
+            evo_display[col] = evo_display[col].apply(_fmt_number)
         evo_display['Retorno'] = evo_display['Retorno'].apply(
             lambda x: f"{'▼' if x < 0 else '▲'} {abs(x):.1f}%" if pd.notna(x) else "-"
         )
         for col in ['Precio al Fin', 'PPP', 'Valor Actual', 'Valor al Inicio',
-                    'Compras', 'Ventas', 'Amort / Cup / Div', 'Ganancia Total']:
+                    'Costo', 'Amort / Cup / Div', 'Ganancia Total']:
             if col in ('Precio al Fin', 'PPP'):
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
             else:
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
         st.dataframe(evo_display, use_container_width=True, hide_index=True,
-                     column_config={"Activo": st.column_config.TextColumn("Activo", width="medium")})
+                     column_config={
+                         "Activo": st.column_config.TextColumn("Activo", width="medium"),
+                         "Nominales al Inicio": st.column_config.TextColumn("Nom. Inicio", width="small"),
+                         "Operaciones del Período": st.column_config.TextColumn("Ops. Período", width="small"),
+                         "Nominales Fin Período": st.column_config.TextColumn("Nom. Fin", width="small"),
+                         "Valor al Inicio": st.column_config.TextColumn("Valor al Inicio", width="small"),
+                         "Costo": st.column_config.TextColumn("Costo", width="small"),
+                         "PPP": st.column_config.TextColumn("PPP", width="small"),
+                         "Amort / Cup / Div": st.column_config.TextColumn("Amort/Cup/Div", width="small"),
+                         "Precio al Fin": st.column_config.TextColumn("Precio Actual", width="small"),
+                         "Valor Actual": st.column_config.TextColumn("Valor Actual", width="small"),
+                         "Ganancia Total": st.column_config.TextColumn("Resultado", width="small"),
+                     })
 
         # ── Tabla cash: cross-check por efectivo real ────────────────────────────
         # El "efectivo real" en una fecha = depósitos − retiros − compras + (ventas+amort+cup+div)
