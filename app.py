@@ -1921,6 +1921,8 @@ def main():
                 live_prices=live_prices, live_fx=live_fx
             )
 
+    st.caption("Build / commit: f5431fe")
+
     # ══════════════════════════════════════════
     # UPLOADER — al pie de la página
     # ══════════════════════════════════════════
