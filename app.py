@@ -24,7 +24,7 @@ warnings.filterwarnings('ignore', category=DeprecationWarning, module='streamlit
 
 
 def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str | None) -> tuple[str | None, str | None]:
-    """Transforma el extracto subido manualmente y retorna la ruta temporal."""
+    """Transforma un extracto crudo tipo broker y retorna la ruta temporal."""
     if not upload_bytes:
         return (None, None)
 
@@ -46,9 +46,12 @@ def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str
         except Exception:
             sheet_names = set()
 
-        # Si el usuario sube un archivo ya compatible con la app, usarlo directo.
-        if {"Operaciones", "Precios"}.issubset(sheet_names):
-            return (str(extract_path), None)
+        required_extract_sheets = {"Pesos", "Dólares", "Títulos"}
+        if not required_extract_sheets.issubset(sheet_names):
+            return (
+                None,
+                "El archivo subido no tiene el formato de extracto esperado. Debe incluir las hojas 'Pesos', 'Dólares' y 'Títulos'.",
+            )
 
         from utils.transform_extracto import transform_extract_to_legacy
 
@@ -63,7 +66,7 @@ def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str
 
 
 def _build_probe_label() -> str:
-    probe = "EXTRACTO_PROBE_20260408C"
+    probe = "EXTRACTO_PROBE_20260408D"
     try:
         sha = (
             subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True)
