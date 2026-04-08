@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
+from pathlib import Path
 import warnings
 
 # Me8: suprimir solo warnings específicos, no todos globalmente
@@ -1354,7 +1355,8 @@ def main():
     # ── Archivo a usar ─────────────────────────────────────────────────────────
     # El uploader está al pie de la página. Su contenido se guarda en session_state
     # para que esté disponible desde el inicio del script en reruns posteriores.
-    filename = 'operaciones.xlsx'
+    default_candidates = ['extracto_transformado.xlsx', 'operaciones.xlsx']
+    filename = next((name for name in default_candidates if Path(name).exists()), 'operaciones.xlsx')
     if st.session_state.get('upload_bytes'):
         if 'upload_id' not in st.session_state:
             st.session_state.upload_id = uuid.uuid4().hex[:12]
@@ -1374,7 +1376,7 @@ def main():
     if operaciones is None or precios is None:
         st.error(
             "Error al cargar los datos. "
-            "Verifica que el archivo 'operaciones.xlsx' esté en la carpeta del proyecto."
+            "Verifica que exista 'extracto_transformado.xlsx' o 'operaciones.xlsx' en la carpeta del proyecto."
         )
         return
 
