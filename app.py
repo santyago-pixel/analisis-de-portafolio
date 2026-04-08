@@ -1503,21 +1503,33 @@ def main():
     # SECCIÓN 2 – EVOLUCIÓN HISTÓRICA
     # Título y selector de fechas en la misma fila
     # ══════════════════════════════════════════
-    col_s2, col_i, col_f = st.columns([4, 1, 1])
+    col_s2, col_i, col_f = st.columns([4.6, 1.5, 1.5])
     with col_s2:
-        st.markdown('<div style="border-left:4px solid #1A4B9B;padding-left:10px;margin:0.3rem 0 0.5rem;min-height:4.4rem;display:flex;align-items:flex-start;"><div style="font-size:1.2rem;font-weight:700;color:#1B2333;padding-top:0.1rem;">Análisis de la Evolución de la Cartera</div></div>', unsafe_allow_html=True)
+        _section_header("Análisis de la Evolución de la Cartera")
     with col_i:
-        fecha_inicio = st.date_input(
-            "Inicio",
-            value=datetime.now().date() - timedelta(days=365),
-            help="Fecha de inicio del período"
-        )
+        st.markdown('<div style="height:2.15rem;"></div>', unsafe_allow_html=True)
+        lbl_i, inp_i = st.columns([0.7, 2.3])
+        with lbl_i:
+            st.markdown('<div style="padding-top:0.42rem;font-size:0.95rem;color:#1B2333;">Inicio</div>', unsafe_allow_html=True)
+        with inp_i:
+            fecha_inicio = st.date_input(
+                "Inicio",
+                value=datetime.now().date() - timedelta(days=365),
+                help="Fecha de inicio del período",
+                label_visibility='collapsed'
+            )
     with col_f:
-        fecha_fin = st.date_input(
-            "Fin",
-            value=datetime.now().date(),
-            help="Fecha de fin del período"
-        )
+        st.markdown('<div style="height:2.15rem;"></div>', unsafe_allow_html=True)
+        lbl_f, inp_f = st.columns([0.45, 2.55])
+        with lbl_f:
+            st.markdown('<div style="padding-top:0.42rem;font-size:0.95rem;color:#1B2333;">Fin</div>', unsafe_allow_html=True)
+        with inp_f:
+            fecha_fin = st.date_input(
+                "Fin",
+                value=datetime.now().date(),
+                help="Fecha de fin del período",
+                label_visibility='collapsed'
+            )
 
     # Me1: validar rango
     if fecha_inicio > fecha_fin:
