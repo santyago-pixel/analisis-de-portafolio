@@ -1149,8 +1149,8 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
                 is_neg = '▼' in str(total_sub)
                 color = '#DC2626' if is_neg else '#16A34A'
                 total_delta_html = (
-                    f'<div style="font-size:0.74rem;font-weight:700;color:{color};'
-                    f'margin-top:0.34rem;line-height:1.1;">{total_sub}</div>'
+                    f'<span style="font-size:0.74rem;font-weight:700;color:{color};'
+                    f'margin-left:0.45rem;white-space:nowrap;">{total_sub}</span>'
                 )
             left_items.append((total_label, total_value, total_delta_html))
         cells = []
@@ -1167,8 +1167,10 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
                 f'<div style="padding:0.86rem 0.95rem 0.82rem;{border}{cell_bg}{cell_border}">'
                 f'<div style="font-size:0.8rem;font-weight:600;color:#667085;'
                 f'margin-bottom:0.42rem;white-space:nowrap;">{label}</div>'
-                f'<div style="font-size:1.04rem;font-weight:700;color:#1B2333;line-height:1.2;">{value}</div>'
-                f'{extra_html}'
+                f'<div style="display:flex;align-items:baseline;gap:0.15rem;flex-wrap:wrap;'
+                f'font-size:1.04rem;font-weight:700;color:#1B2333;line-height:1.2;">'
+                f'<span>{value}</span>{extra_html}'
+                f'</div>'
                 f'</div>'
             )
         st.markdown(
@@ -1188,8 +1190,8 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
                 is_neg = str(total_sub).strip().startswith('(') and '▼' in str(total_sub)
                 color = '#DC2626' if is_neg else '#16A34A'
                 delta_html = (
-                    f'<div style="font-size:0.95rem;font-weight:700;color:{color};margin-top:0.44rem;">'
-                    f'{total_sub}</div>'
+                    f'<span style="font-size:0.9rem;font-weight:700;color:{color};'
+                    f'margin-left:0.45rem;white-space:nowrap;">{total_sub}</span>'
                 )
             st.markdown(
                 f'<div style="background:{"#FFFFFF" if compact_total else "linear-gradient(180deg,#FFFFFF 0%,#F7FAFF 100%)"};'
@@ -1200,8 +1202,11 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
                 f'display:flex;flex-direction:column;justify-content:center;align-items:{"flex-start" if compact_total else "center"};text-align:{"left" if compact_total else "center"};">'
                 f'<div style="font-size:{"0.8rem" if compact_total else "0.82rem"};font-weight:{600 if compact_total else 700};color:#667085;'
                 f'margin-bottom:0.42rem;">{total_label}</div>'
-                f'<div style="font-size:{"1.04rem" if compact_total else "1.35rem"};font-weight:{700 if compact_total else 800};color:#122033;line-height:1.12;">{total_value}</div>'
-                f'{delta_html}'
+                f'<div style="display:flex;align-items:baseline;justify-content:{"flex-start" if compact_total else "center"};'
+                f'gap:0.15rem;flex-wrap:wrap;font-size:{"1.04rem" if compact_total else "1.35rem"};'
+                f'font-weight:{700 if compact_total else 800};color:#122033;line-height:1.12;">'
+                f'<span>{total_value}</span>{delta_html}'
+                f'</div>'
                 f'</div>',
                 unsafe_allow_html=True
             )
