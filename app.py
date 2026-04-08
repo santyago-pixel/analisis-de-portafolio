@@ -1575,6 +1575,7 @@ def main():
             total_value=_fmt_money(total_gain, moneda),
             total_sub=pct_str2,
         )
+        st.markdown("<div style='height:1.25rem;'></div>", unsafe_allow_html=True)
 
         evo_display = evolution_df.sort_values('Nominales Fin Período', ascending=False).reset_index(drop=True).copy()
         evo_display = evo_display[
