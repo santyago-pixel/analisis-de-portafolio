@@ -1144,7 +1144,15 @@ def _render_summary_panel(base_items, total_label, total_value, total_sub=None, 
     with left_col:
         left_items = list(base_items)
         if inline_total:
-            left_items.append((total_label, total_value, ''))
+            total_delta_html = ''
+            if total_sub:
+                is_neg = '▼' in str(total_sub)
+                color = '#DC2626' if is_neg else '#16A34A'
+                total_delta_html = (
+                    f'<div style="font-size:0.74rem;font-weight:700;color:{color};'
+                    f'margin-top:0.34rem;line-height:1.1;">{total_sub}</div>'
+                )
+            left_items.append((total_label, total_value, total_delta_html))
         cells = []
         for i, item in enumerate(left_items):
             if len(item) == 3:
@@ -1406,7 +1414,7 @@ def main():
                 ],
                 total_label='Ganancia <span style="font-size:0.68rem;font-weight:500;">(1) + (3) + (4) - (2)</span>',
                 total_value=_fmt_money(total_ganancia, moneda),
-                total_sub=None,
+                total_sub=pct_str,
                 side_items=[
                     [
                         ('Gan. Realizadas <span style="font-size:0.66rem;font-weight:500;">(3) + (4)</span>', _fmt_money(total_ganancia_rlz + total_ganancia_r, moneda)),
@@ -1429,7 +1437,7 @@ def main():
                 ],
                 total_label="Ganancia",
                 total_value=_fmt_money(total_ganancia, moneda),
-                total_sub=None,
+                total_sub=pct_str,
             )
 
         st.markdown("<div style='height:1.25rem;'></div>", unsafe_allow_html=True)
@@ -1551,17 +1559,16 @@ def main():
         pct_evo = _modified_dietz_pct(v_inicio_real_total, v_fin_total,
                                        all_flows_md, fecha_inicio, fecha_fin)
         pct_str2   = f"({'▼' if pct_evo < 0 else '▲'} {abs(pct_evo):.1f}%)"
-        summary_evo = pd.DataFrame([{
-            'Valor Total':     _fmt_money(evolution_df['Valor Actual'].sum(), moneda),
-            'Valor al Inicio': _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda),
-            'Compras':         _fmt_money(evolution_df['Compras'].sum(), moneda),
-            'Ventas + Flujos': _fmt_money(flujos, moneda),
-            'Ganancia Total':  f"{_fmt_money(total_gain, moneda)} {pct_str2}",
-        }])
-        st.dataframe(
-            summary_evo.style.map(_style_variation_cell, subset=['Ganancia Total']),
-            use_container_width=True,
-            hide_index=True
+        _render_summary_panel(
+            base_items=[
+                ("Valor Final", _fmt_money(evolution_df['Valor Actual'].sum(), moneda)),
+                ("Valor al Inicio", _fmt_money(evolution_df['Valor al Inicio'].sum(), moneda)),
+                ("Compras", _fmt_money(evolution_df['Compras'].sum(), moneda)),
+                ("Ventas + Flujos", _fmt_money(flujos, moneda)),
+            ],
+            total_label="Ganancia",
+            total_value=_fmt_money(total_gain, moneda),
+            total_sub=pct_str2,
         )
 
         evo_display = evolution_df.sort_values('Nominales Fin Período', ascending=False).reset_index(drop=True).copy()
