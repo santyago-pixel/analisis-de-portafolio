@@ -392,8 +392,12 @@ def _copy_and_extend_prices(
         if asset in existing or asset == "DOLAR":
             continue
         if observed_native_prices and asset in observed_native_prices:
-            _bucket, observed_price = observed_native_prices[asset]
-            prices[asset] = observed_price
+            bucket, observed_price = observed_native_prices[asset]
+            if bucket == "ARS":
+                prices[asset] = pd.to_numeric(prices["ARS"], errors="coerce").replace(0, np.nan)
+                prices[asset] = observed_price / prices[asset]
+            else:
+                prices[asset] = observed_price
             continue
         if asset in USD_PRICE_FALLBACK_RICS:
             prices[asset] = prices["BPD7"]
