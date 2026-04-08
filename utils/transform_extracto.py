@@ -73,6 +73,36 @@ PESO_PRICE_FALLBACK_RICS = {
     "TZXM7",
 }
 
+INITIAL_ASSET_BALANCES = [
+    {
+        "Activo": "BPOD7",
+        "Descripción": "BOPREAL S. 1 D VTO31/10/27 U$S",
+        "Nominales": 11000.0,
+    },
+    {
+        "Activo": "BPY26",
+        "Descripción": "BOPREAL S.3 VTO31/05/26 U$S",
+        "Nominales": 8700.0,
+    },
+    {
+        "Activo": "PNXCO",
+        "Descripción": "ON PAN AMERICAN ENERGY 8.5 %",
+        "Nominales": 20000.0,
+    },
+    {
+        "Activo": "TTC9O",
+        "Descripción": "ON TECPETROL CL.9 V.24/10/29 U",
+        "Nominales": 20000.0,
+    },
+    {
+        "Activo": "TZXD7",
+        "Descripción": "BONTES $ A DESC AJ CER V15/12/27",
+        "Nominales": 3546099.0,
+    },
+]
+
+INITIAL_CASH_USD = 850.0
+
 
 def _read_extract_sheet(path: Path, sheet_name: str) -> pd.DataFrame:
     raw = pd.read_excel(path, sheet_name=sheet_name, header=3)
@@ -350,6 +380,84 @@ def _copy_and_extend_prices(base_prices: pd.DataFrame, assets: set[str]) -> pd.D
     return prices
 
 
+def _price_for_asset(prices: pd.DataFrame, asset: str, fecha: pd.Timestamp) -> float:
+    if asset not in prices.columns:
+        raise ValueError(f"No hay precio disponible para el activo {asset}.")
+    mask_live = prices["Fecha"].astype(str).str.strip().str.lower() == "precio actual"
+    hist = prices.loc[~mask_live].copy()
+    hist["Fecha"] = pd.to_datetime(hist["Fecha"], errors="coerce")
+    hist = hist.dropna(subset=["Fecha"]).sort_values("Fecha")
+    rows = hist[hist["Fecha"] <= pd.to_datetime(fecha)]
+    if rows.empty:
+        rows = hist
+    if rows.empty:
+        raise ValueError(f"No hay histórico de precios para {asset}.")
+    return float(rows.iloc[-1][asset])
+
+
+def _build_initial_balance_rows(
+    prices: pd.DataFrame,
+    fx_rates: pd.DataFrame,
+    first_operation_date: pd.Timestamp,
+) -> list[dict]:
+    funding_date = pd.Timestamp(first_operation_date).normalize() - pd.Timedelta(days=2)
+    opening_date = pd.Timestamp(first_operation_date).normalize() - pd.Timedelta(days=1)
+    opening_rows: list[dict] = []
+    total_opening_value_usd = 0.0
+
+    for item in INITIAL_ASSET_BALANCES:
+        asset = item["Activo"]
+        qty = float(item["Nominales"])
+        price = _price_for_asset(prices, asset, opening_date)
+        fx = _fx_from_prices(fx_rates, opening_date)
+
+        if asset in PESO_PRICE_FALLBACK_RICS:
+            precio_ars = price
+            valor_ars = qty * price
+            precio_usd = price / fx
+            valor_usd = valor_ars / fx
+        else:
+            precio_usd = price
+            valor_usd = qty * price
+            precio_ars = price * fx
+            valor_ars = valor_usd * fx
+
+        total_opening_value_usd += valor_usd
+        opening_rows.append(
+            {
+                "Fecha": opening_date,
+                "Operacion": "Compra",
+                "Tipo de activo": _classify_asset_type(item["Descripción"]),
+                "Activo": asset,
+                "Nominales": qty,
+                "Precio": precio_usd,
+                "Valor USD": valor_usd,
+                "Precio ARS": precio_ars,
+                "Valor ARS": valor_ars,
+                "Deposito cash": np.nan,
+                "Retiro Cash": np.nan,
+            }
+        )
+
+    opening_rows.insert(
+        0,
+        {
+            "Fecha": funding_date,
+            "Operacion": "Retiro/Ingreso",
+            "Tipo de activo": np.nan,
+            "Activo": np.nan,
+            "Nominales": np.nan,
+            "Precio": np.nan,
+            "Valor USD": np.nan,
+            "Precio ARS": np.nan,
+            "Valor ARS": np.nan,
+            "Deposito cash": total_opening_value_usd + INITIAL_CASH_USD,
+            "Retiro Cash": np.nan,
+        },
+    )
+    return opening_rows
+
+
 def transform_extract_to_legacy(
     extract_path: Path,
     base_workbook: Path,
@@ -363,9 +471,20 @@ def transform_extract_to_legacy(
     fx_map = _same_day_fx_map(titulos)
     market_rows = _build_market_rows(titulos, fx_map, fx_rates)
     cash_rows = _build_cash_and_flow_rows(pesos, dolares, fx_rates)
+    all_assets = {
+        *[str(row["Activo"]).strip() for row in market_rows if pd.notna(row.get("Activo"))],
+        *[item["Activo"] for item in INITIAL_ASSET_BALANCES],
+    }
+    prices = _copy_and_extend_prices(base_prices, all_assets)
+    first_operation_date = min(
+        pd.Timestamp(df["Fecha de Liquidación"].dropna().min())
+        for df in [pesos, dolares, titulos]
+        if not df["Fecha de Liquidación"].dropna().empty
+    )
+    opening_rows = _build_initial_balance_rows(prices, fx_rates, first_operation_date)
 
     legacy_columns = list(pd.read_excel(base_workbook, sheet_name="Operaciones").columns)
-    ops = pd.DataFrame(market_rows + cash_rows)
+    ops = pd.DataFrame(opening_rows + market_rows + cash_rows)
     ops = _compute_invertido(ops)
     ops["Fecha"] = pd.to_datetime(ops["Fecha"], errors="coerce").dt.date
 
@@ -374,8 +493,6 @@ def transform_extract_to_legacy(
             ops[col] = np.nan
     ops = ops[legacy_columns]
 
-    assets = set(ops["Activo"].dropna().astype(str).str.strip())
-    prices = _copy_and_extend_prices(base_prices, assets)
     mask_live = prices["Fecha"].astype(str).str.strip().str.lower() == "precio actual"
     prices.loc[~mask_live, "Fecha"] = pd.to_datetime(
         prices.loc[~mask_live, "Fecha"], errors="coerce"
