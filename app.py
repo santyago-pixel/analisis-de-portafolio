@@ -664,6 +664,7 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
         total_dividendos = total_dividendos_ars if moneda == 'ARS' else total_dividendos_usd
         ganancia_no_r = gan_no_r_ars if moneda == 'ARS' else gan_no_r_usd
         ganancia_total = ganancia_total_ars if moneda == 'ARS' else ganancia_total_usd
+        retorno_pct = (ganancia_total / costo_posicion * 100) if costo_posicion > 0 else np.nan
 
         portfolio_data.append({
             'Activo':                  asset,
@@ -679,6 +680,7 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
             'Dividendos':              total_dividendos,
             'Ganancias no Realizadas': ganancia_no_r,
             'Ganancia Total':          ganancia_total,
+            'Retorno':                 retorno_pct,
             '_nota':                   nota,
         })
 
@@ -1436,12 +1438,12 @@ def main():
             cols_display = [
                 'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
                 'Ganancias Realizadas', 'Amort / Cup / Div',
-                'Ganancia Total', 'Resultado Econ. USD @ TC', 'Efecto FX'
+                'Retorno', 'Resultado Econ. USD @ TC', 'Efecto FX'
             ]
         else:
             cols_display = [
                 'Activo', 'Nominales', 'Precio Actual', 'Valor Actual', 'Costo',
-                'Ganancias Realizadas', 'Amort / Cup / Div', 'Ganancia Total'
+                'Ganancias Realizadas', 'Amort / Cup / Div', 'Retorno'
             ]
         display_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'}).copy()
         display_df['Amort / Cup / Div'] = (
@@ -1459,8 +1461,10 @@ def main():
             display_df['Amort / Cup / Div'] = display_df['Amort / Cup / Div'].apply(lambda x: _fmt_money(x, moneda))
         else:
             display_df['Amort / Cup / Div'] = display_df['Amort / Cup / Div'].apply(lambda x: _fmt_money(x, moneda))
-        display_df['Ganancia Total'] = display_df['Ganancia Total'].apply(lambda x: _fmt_money(x, moneda))
-        st.dataframe(display_df, use_container_width=True, hide_index=True,
+        display_df['Retorno'] = display_df['Retorno'].apply(
+            lambda x: f"{'▼' if x < 0 else '▲'} {abs(x):.1f}%" if pd.notna(x) else "-"
+        )
+        st.dataframe(display_df.style.map(_style_variation_cell, subset=['Retorno']), use_container_width=True, hide_index=True,
                      column_config={
                          "Activo": st.column_config.TextColumn("Activo", width="small"),
                          "Nominales": st.column_config.TextColumn("Nom.", width="small"),
@@ -1475,7 +1479,7 @@ def main():
                          "Amortizaciones": st.column_config.TextColumn("Pagos", width="small"),
                          "Cupones": st.column_config.TextColumn("Pagos", width="small"),
                          "Dividendos": st.column_config.TextColumn("Pagos", width="small"),
-                         "Ganancia Total": st.column_config.TextColumn("Ganancia Total", width="small"),
+                         "Retorno": st.column_config.TextColumn("Retorno", width="small"),
                      })
 
         if '_nota' in portfolio_df.columns:
