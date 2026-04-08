@@ -284,7 +284,7 @@ def load_data(filename='operaciones.xlsx'):
             'Compra', 'Venta', 'Amortizacion', 'Amortización',
             'Cupon', 'Cupón', 'Dividendo', 'Dividendos'
         }
-        cash_types = {'Ingreso', 'Retiro'}
+        cash_types = {'Ingreso', 'Retiro', 'Ingreso/Retiro', 'Retiro/Ingreso'}
         cash_cols_present = operaciones_mapped[['Deposito cash', 'Retiro Cash', 'Invertido']].notna().any(axis=1)
 
         # Cash externo:
