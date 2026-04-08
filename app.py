@@ -866,8 +866,29 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
                                          fecha_inicio, fecha_fin)
         all_flows_md.extend(flujos_md)
 
-        # PPP: precio promedio ponderado del período
-        ppp = ((valor_inicio_display + compras_adicionales) / nom_fin) if nom_fin > 0 else np.nan
+        # PPP: costo promedio ponderado de la posición remanente al cierre.
+        # Para posiciones abiertas al inicio, se toma el mark de fecha_inicio
+        # como costo base del tramo preexistente dentro del período.
+        costo_ppp = valor_inicio
+        nom_ppp = nom_inicio
+        for _, op in ops_en_rango.iterrows():
+            tipo = op['Tipo'].strip()
+            monto = _get_monto(op, moneda, fx_rates)
+            qty = op.get('Cantidad', np.nan)
+            qty = float(qty) if pd.notna(qty) else 0.0
+
+            if tipo == 'Compra' and qty > 0:
+                costo_ppp += monto
+                nom_ppp += qty
+            elif tipo == 'Venta' and qty > 0 and nom_ppp > 0:
+                sold_qty = min(qty, nom_ppp)
+                avg_cost = (costo_ppp / nom_ppp) if nom_ppp > 0 else 0
+                costo_ppp = max(costo_ppp - (avg_cost * sold_qty), 0)
+                nom_ppp = max(nom_ppp - sold_qty, 0)
+                if nom_ppp == 0:
+                    costo_ppp = 0
+
+        ppp = (costo_ppp / nom_ppp) if nom_ppp > 0 else np.nan
 
         evolution_data.append({
             'Activo':               asset,
