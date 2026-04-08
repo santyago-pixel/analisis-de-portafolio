@@ -112,6 +112,12 @@ footer             { visibility: hidden; }
     margin: 0.8rem 0 !important;
 }
 
+/* Date inputs */
+.stDateInput input,
+[data-testid="stDateInputField"] input {
+    font-size: 0.95rem !important;
+}
+
 /* ══════════════════════════════════════════════
    TÍTULOS NATIVOS DE STREAMLIT
    (usados solo como fallback; normalmente
@@ -1670,18 +1676,18 @@ def main():
                                         cash_flows_md, fecha_inicio, fecha_fin)
         pct_str_cash        = f"({'▼' if pct_cash < 0 else '▲'} {abs(pct_cash):.1f}%)"
 
-        summary_cash = pd.DataFrame([{
-            'Valor Inicial (tít+cash)': _fmt_money(valor_inicial_total, moneda),
-            'Flujos Netos':             _fmt_money(flujos_netos, moneda),
-            'Valor Final Títulos':      _fmt_money(titulos_fin, moneda),
-            'Valor Final Cash':         _fmt_money(cash_fin, moneda),
-            'Ganancia Total':           f"{_fmt_money(ganancia_cash, moneda)} {pct_str_cash}",
-        }])
-        st.dataframe(
-            summary_cash.style.map(_style_variation_cell, subset=['Ganancia Total']),
-            use_container_width=True,
-            hide_index=True
+        _render_summary_panel(
+            base_items=[
+                ("Valor Inicial (Tít. + Cash)", _fmt_money(valor_inicial_total, moneda)),
+                ("Flujos Netos", _fmt_money(flujos_netos, moneda)),
+                ("Valor Final Títulos", _fmt_money(titulos_fin, moneda)),
+                ("Valor Final Cash", _fmt_money(cash_fin, moneda)),
+            ],
+            total_label="Resultado",
+            total_value=_fmt_money(ganancia_cash, moneda),
+            total_sub=pct_str_cash,
         )
+        st.markdown("<div style='height:1.25rem;'></div>", unsafe_allow_html=True)
 
         st.caption(
             "ℹ️ Los retornos (%) se calculan con Modified Dietz: pondera cada flujo "
@@ -1768,12 +1774,13 @@ def main():
                 r = cash_sdf_g[cash_sdf_g.index <= d]
                 return float(r.iloc[-1]['Cash']) if not r.empty else 0.0
 
-            # Step function: neto invertido (depósitos − retiros)
-            ni_cum_g = 0.0
-            ni_steps_g = []
+            # "Invertido" del gráfico: parte del valor inicial del período y
+            # luego solo ajusta por flujos externos posteriores al inicio.
+            ni_cum_g = float(valor_inicial_total)
+            ni_steps_g = [(fi_g, ni_cum_g)]
             for _, row in ops_sorted_g.iterrows():
                 d = row['Fecha']
-                if not has_cash or pd.isna(d):
+                if not has_cash or pd.isna(d) or d <= fi_g:
                     continue
                 dep = float(row[col_dep]) if pd.notna(row.get(col_dep, np.nan)) else 0.0
                 ret = float(row[col_ret]) if pd.notna(row.get(col_ret, np.nan)) else 0.0
@@ -1807,7 +1814,7 @@ def main():
                 chart_rows_g.append({
                     'Fecha':          d,
                     'Valor Total':    bv + _cash_at_g(d),
-                    'Neto Invertido': _ni_at_g(d),
+                    'Invertido':      _ni_at_g(d),
                 })
 
             df_chart = pd.DataFrame(chart_rows_g)
@@ -1815,8 +1822,8 @@ def main():
 
             fig = go.Figure()
             fig.add_trace(go.Scatter(
-                x=df_chart['Fecha'], y=df_chart['Neto Invertido'],
-                fill='tozeroy', name='Neto Invertido',
+                x=df_chart['Fecha'], y=df_chart['Invertido'],
+                fill='tozeroy', name='Invertido',
                 mode='lines', line=dict(color='#93C5FD', width=1.5),
                 fillcolor='rgba(147, 197, 253, 0.25)',
             ))
