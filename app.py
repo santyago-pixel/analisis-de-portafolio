@@ -40,6 +40,16 @@ def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str
 
     try:
         extract_path.write_bytes(upload_bytes)
+        try:
+            xls = pd.ExcelFile(extract_path)
+            sheet_names = set(xls.sheet_names)
+        except Exception:
+            sheet_names = set()
+
+        # Si el usuario sube un archivo ya compatible con la app, usarlo directo.
+        if {"Operaciones", "Precios"}.issubset(sheet_names):
+            return (str(extract_path), None)
+
         from utils.transform_extracto import transform_extract_to_legacy
 
         transform_extract_to_legacy(
@@ -53,7 +63,7 @@ def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str
 
 
 def _build_probe_label() -> str:
-    probe = "EXTRACTO_PROBE_20260408B"
+    probe = "EXTRACTO_PROBE_20260408C"
     try:
         sha = (
             subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True)
