@@ -192,6 +192,23 @@ def _same_day_fx_map(titulos: pd.DataFrame) -> dict[tuple[pd.Timestamp, str], fl
     return fx_map
 
 
+def _observed_native_price_map(titulos: pd.DataFrame) -> dict[str, tuple[str, float]]:
+    observed: dict[str, tuple[str, float]] = {}
+    valid = titulos[~titulos["Descripción"].isin(IGNORE_TITLE_DESCRIPTIONS)].copy()
+    valid["Bucket"] = valid["Moneda"].apply(_currency_bucket)
+    valid = valid[valid["Bucket"].isin(["ARS", "USD"])]
+    valid["Fecha de Liquidación"] = pd.to_datetime(valid["Fecha de Liquidación"], errors="coerce")
+    valid = valid.dropna(subset=["Fecha de Liquidación", "RIC", "Precio Promedio Ponderado"])
+
+    for asset, sub in valid.sort_values("Fecha de Liquidación").groupby("RIC"):
+        last = sub.iloc[-1]
+        observed[str(asset).strip()] = (
+            str(last["Bucket"]).strip(),
+            float(last["Precio Promedio Ponderado"]),
+        )
+    return observed
+
+
 def _classify_asset_type(species_description: str) -> str:
     text = str(species_description).lower()
     if "cuota" in text or "fci" in text or "fondo" in text:
@@ -361,7 +378,11 @@ def _compute_invertido(ops: pd.DataFrame) -> pd.DataFrame:
     return ops
 
 
-def _copy_and_extend_prices(base_prices: pd.DataFrame, assets: set[str]) -> pd.DataFrame:
+def _copy_and_extend_prices(
+    base_prices: pd.DataFrame,
+    assets: set[str],
+    observed_native_prices: dict[str, tuple[str, float]] | None = None,
+) -> pd.DataFrame:
     prices = base_prices.copy()
     existing = {str(c).strip() for c in prices.columns}
     if "BPD7" not in prices.columns:
@@ -369,6 +390,10 @@ def _copy_and_extend_prices(base_prices: pd.DataFrame, assets: set[str]) -> pd.D
 
     for asset in sorted(assets):
         if asset in existing or asset == "DOLAR":
+            continue
+        if observed_native_prices and asset in observed_native_prices:
+            _bucket, observed_price = observed_native_prices[asset]
+            prices[asset] = observed_price
             continue
         if asset in USD_PRICE_FALLBACK_RICS:
             prices[asset] = prices["BPD7"]
@@ -469,13 +494,14 @@ def transform_extract_to_legacy(
     base_prices, fx_rates = _load_base_prices(base_workbook)
 
     fx_map = _same_day_fx_map(titulos)
+    observed_native_prices = _observed_native_price_map(titulos)
     market_rows = _build_market_rows(titulos, fx_map, fx_rates)
     cash_rows = _build_cash_and_flow_rows(pesos, dolares, fx_rates)
     all_assets = {
         *[str(row["Activo"]).strip() for row in market_rows if pd.notna(row.get("Activo"))],
         *[item["Activo"] for item in INITIAL_ASSET_BALANCES],
     }
-    prices = _copy_and_extend_prices(base_prices, all_assets)
+    prices = _copy_and_extend_prices(base_prices, all_assets, observed_native_prices)
     first_operation_date = min(
         pd.Timestamp(df["Fecha de Liquidación"].dropna().min())
         for df in [pesos, dolares, titulos]

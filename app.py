@@ -304,6 +304,7 @@ def load_data(filename='operaciones.xlsx'):
         operaciones_mapped['Activo']   = operaciones['Activo']
         operaciones_mapped['Cantidad'] = operaciones['Nominales']
         operaciones_mapped['Precio']   = operaciones['Precio']
+        operaciones_mapped['_Orden']   = np.arange(len(operaciones))
 
         # Columna de monto en USD: puede llamarse 'Valor USD' o 'Valor'
         if 'Valor USD' in operaciones.columns:
@@ -575,6 +576,13 @@ def _find_last_reset(asset_ops_sorted):
     return last_reset_date, last_reset_pos
 
 
+def _sort_ops(df: pd.DataFrame) -> pd.DataFrame:
+    """Orden estable para operaciones, preservando la secuencia original intradiaria."""
+    if '_Orden' in df.columns:
+        return df.sort_values(['Fecha', '_Orden'], kind='mergesort')
+    return df.sort_values('Fecha', kind='mergesort')
+
+
 # ─────────────────────────────────────────────
 # Composición actual
 # ─────────────────────────────────────────────
@@ -614,7 +622,7 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
     portfolio_data = []
 
     for asset in assets:
-        asset_ops = operaciones[operaciones['Activo'] == asset].sort_values('Fecha')
+        asset_ops = _sort_ops(operaciones[operaciones['Activo'] == asset])
         asset_ops_until = asset_ops[asset_ops['Fecha'] <= pd.to_datetime(fecha_actual)]
 
         if asset_ops_until.empty:
@@ -664,7 +672,9 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
                 'Precio ARS': oldest_precio_ars,
                 'Monto ARS':  oldest_monto_ars,
             }])
-            ops  = pd.concat([synthetic, ops]).sort_values('Fecha').reset_index(drop=True)
+            if '_Orden' in ops.columns:
+                synthetic['_Orden'] = -1
+            ops  = _sort_ops(pd.concat([synthetic, ops])).reset_index(drop=True)
             nota = (
                 f'⚠️ {asset}: compra de origen no registrada — se estimaron '
                 f'{deficit:.0f} nominales al precio más antiguo disponible '
@@ -802,7 +812,7 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
     all_flows_md = []  # flujos datados para Modified Dietz a nivel portafolio
 
     for asset in assets:
-        asset_ops = operaciones[operaciones['Activo'] == asset].sort_values('Fecha')
+        asset_ops = _sort_ops(operaciones[operaciones['Activo'] == asset])
 
         # C1/C2/C6: Detectar último reset usando solo ops ANTES de fecha_inicio.
         # Si se usara ops hasta fecha_fin, activos que cierran posición dentro del
@@ -847,7 +857,9 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
                 'Precio ARS': oldest_precio_ars,
                 'Monto ARS':  oldest_monto_ars,
             }])
-            ops_since_reset = pd.concat([synthetic, ops_since_reset]).sort_values('Fecha').reset_index(drop=True)
+            if '_Orden' in ops_since_reset.columns:
+                synthetic['_Orden'] = -1
+            ops_since_reset = _sort_ops(pd.concat([synthetic, ops_since_reset])).reset_index(drop=True)
             st.caption(
                 f'⚠️ {asset}: compra de origen no registrada — se estimaron '
                 f'{deficit:.0f} nominales al precio más antiguo disponible '
@@ -1026,7 +1038,7 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo,
     operaciones['Fecha'] = pd.to_datetime(operaciones['Fecha'])
     precios['Fecha']     = pd.to_datetime(precios['Fecha'])
 
-    asset_ops = operaciones[operaciones['Activo'] == activo].sort_values('Fecha')
+    asset_ops = _sort_ops(operaciones[operaciones['Activo'] == activo])
 
     # C1/C2: Reset detectado solo con ops ANTES de fecha_inicio (igual que Sección 2).
     # Así, activos que cierran posición dentro del período (AL29, AL30) no quedan excluidos.
@@ -1796,7 +1808,7 @@ def main():
         try:
             from collections import defaultdict
 
-            ops_sorted_g = ops_cash.dropna(subset=['Fecha']).sort_values('Fecha')
+            ops_sorted_g = _sort_ops(ops_cash.dropna(subset=['Fecha']))
 
             # Precios enriquecidos con live prices
             precios_g = precios.copy()
