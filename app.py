@@ -15,6 +15,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from pathlib import Path
 import subprocess
+import tempfile
 import warnings
 
 # Me8: suprimir solo warnings específicos, no todos globalmente
@@ -22,40 +23,33 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning, module='streamlit')
 
 
-def _ensure_extract_workbook() -> tuple[str | None, str | None]:
-    """Genera/actualiza el workbook transformado si existe el extracto fuente.
+def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str | None) -> tuple[str | None, str | None]:
+    """Transforma el extracto subido manualmente y retorna la ruta temporal."""
+    if not upload_bytes:
+        return (None, None)
 
-    Retorna (filename_preferido, warning_msg). Si no hay extracto fuente, cae al
-    workbook legado. Si falla la transformación, informa el warning y cae al
-    mejor archivo disponible.
-    """
-    extract_path = Path("2025_3618.xlsx")
     base_path = Path("operaciones.xlsx")
-    output_path = Path("extracto_transformado.xlsx")
-    transform_script = Path("utils/transform_extracto.py")
+    if not base_path.exists():
+        return (None, "No se encontró operaciones.xlsx para usar como base de precios.")
 
-    if not extract_path.exists():
-        return ("operaciones.xlsx" if base_path.exists() else None, None)
+    temp_root = Path(tempfile.gettempdir()) / "analisis_portafolio_extracto"
+    temp_root.mkdir(parents=True, exist_ok=True)
+    upload_tag = upload_id or "session"
+    extract_path = temp_root / f"extracto_fuente_{upload_tag}.xlsx"
+    output_path = temp_root / f"extracto_transformado_{upload_tag}.xlsx"
 
     try:
-        needs_refresh = (
-            not output_path.exists()
-            or output_path.stat().st_mtime < extract_path.stat().st_mtime
-            or output_path.stat().st_mtime < base_path.stat().st_mtime
-            or (transform_script.exists() and output_path.stat().st_mtime < transform_script.stat().st_mtime)
-        )
-        if needs_refresh:
-            from utils.transform_extracto import transform_extract_to_legacy
+        extract_path.write_bytes(upload_bytes)
+        from utils.transform_extracto import transform_extract_to_legacy
 
-            transform_extract_to_legacy(
-                extract_path=extract_path,
-                base_workbook=base_path,
-                output_path=output_path,
-            )
+        transform_extract_to_legacy(
+            extract_path=extract_path,
+            base_workbook=base_path,
+            output_path=output_path,
+        )
         return (str(output_path), None)
     except Exception as exc:
-        fallback = "operaciones.xlsx" if base_path.exists() else None
-        return (fallback, f"No se pudo regenerar extracto_transformado.xlsx: {exc}")
+        return (None, f"No se pudo transformar el extracto subido: {exc}")
 
 
 def _build_probe_label() -> str:
@@ -1415,48 +1409,14 @@ def _fecha_es(fecha):
 def main():
     import uuid
 
-    # ── Archivo a usar ─────────────────────────────────────────────────────────
-    # El uploader está al pie de la página. Su contenido se guarda en session_state
-    # para que esté disponible desde el inicio del script en reruns posteriores.
-    auto_filename, auto_warning = _ensure_extract_workbook()
-    filename = auto_filename or 'operaciones.xlsx'
-    if st.session_state.get('upload_bytes'):
-        if 'upload_id' not in st.session_state:
-            st.session_state.upload_id = uuid.uuid4().hex[:12]
-        filename = f"temp_{st.session_state.upload_id}.xlsx"
-        with open(filename, 'wb') as f:
-            f.write(st.session_state.upload_bytes)
-
     # ── Moneda desde sesión (disponible antes del widget, que se renderiza luego) ─
     moneda = st.session_state.get('moneda_sel', 'USD')
 
     # ── Fecha actual fija = hoy (se muestra en hero card, sin input) ───────────
     fecha_actual = datetime.now().date()
 
-    if auto_warning and not st.session_state.get('upload_bytes'):
-        st.warning(auto_warning)
-
-    # ── Carga de datos ─────────────────────────────────────────────────────────
-    operaciones, precios, fx_rates, live_prices, live_fx = load_data(filename)
-
-    if operaciones is None or precios is None:
-        st.error(
-            "Error al cargar los datos. "
-            "Verifica que exista 'extracto_transformado.xlsx' o 'operaciones.xlsx' en la carpeta del proyecto."
-        )
-        return
-
-    # Validar ARS
-    if moneda == 'ARS' and (fx_rates is None or fx_rates.empty):
-        st.warning(
-            "⚠️ Modo ARS: no se encontró columna 'ARS' en Precios. "
-            "Se muestran valores en USD."
-        )
-        moneda = 'USD'
-
-    lbl_moneda = 'ARS' if moneda == 'ARS' else 'USD'
-
     # ── Hero card ──────────────────────────────────────────────────────────────
+    lbl_moneda = 'ARS' if moneda == 'ARS' else 'USD'
     fecha_str = _fecha_es(fecha_actual)
     st.markdown(
         f'<div style="background:#1A4B9B;border-radius:12px;padding:1.2rem 1.8rem;'
@@ -1471,6 +1431,61 @@ def main():
         f'</div>',
         unsafe_allow_html=True
     )
+
+    st.markdown("<div style='height:0.35rem;'></div>", unsafe_allow_html=True)
+    uploaded_file = st.file_uploader(
+        "Subí el extracto de cuenta (.xlsx)",
+        type=['xlsx', 'xls'],
+        key='extract_upload_top',
+    )
+    if uploaded_file is not None:
+        new_bytes = uploaded_file.getbuffer().tobytes()
+        if new_bytes != st.session_state.get('upload_bytes', b''):
+            st.session_state.upload_bytes = new_bytes
+            st.session_state.upload_name = uploaded_file.name
+            st.session_state.upload_id = uuid.uuid4().hex[:12]
+            st.rerun()
+
+    if st.session_state.get('upload_bytes'):
+        col_up_a, col_up_b = st.columns([6, 1])
+        with col_up_a:
+            st.success(f"✅ Extracto cargado: {st.session_state.get('upload_name', 'archivo.xlsx')}")
+        with col_up_b:
+            if st.button("Quitar archivo"):
+                st.session_state.upload_bytes = None
+                st.session_state.upload_name = None
+                st.session_state.upload_id = None
+                st.rerun()
+    else:
+        st.info("Subí un extracto de cuenta en formato broker para transformar y analizar la cartera.")
+        st.caption(f"Build / probe: {_build_probe_label()}")
+        return
+
+    filename, transform_warning = _ensure_uploaded_extract_workbook(
+        st.session_state.get('upload_bytes'),
+        st.session_state.get('upload_id'),
+    )
+    if transform_warning:
+        st.error(transform_warning)
+        st.caption(f"Build / probe: {_build_probe_label()}")
+        return
+
+    # ── Carga de datos ─────────────────────────────────────────────────────────
+    operaciones, precios, fx_rates, live_prices, live_fx = load_data(filename)
+
+    if operaciones is None or precios is None:
+        st.error("Error al cargar los datos transformados desde el extracto subido.")
+        st.caption(f"Build / probe: {_build_probe_label()}")
+        return
+
+    # Validar ARS
+    if moneda == 'ARS' and (fx_rates is None or fx_rates.empty):
+        st.warning(
+            "⚠️ Modo ARS: no se encontró columna 'ARS' en Precios. "
+            "Se muestran valores en USD."
+        )
+        moneda = 'USD'
+        lbl_moneda = 'USD'
 
     # ══════════════════════════════════════════
     # SECCIÓN 1 – COMPOSICIÓN ACTUAL
@@ -1988,30 +2003,6 @@ def main():
             )
 
     st.caption(f"Build / probe: {_build_probe_label()}")
-
-    # ══════════════════════════════════════════
-    # UPLOADER — al pie de la página
-    # ══════════════════════════════════════════
-    st.markdown("---")
-    with st.expander("📁 Cargar archivo Excel diferente"):
-        uploaded_file = st.file_uploader(
-            "Arrastrá un .xlsx o hacé click para seleccionar",
-            type=['xlsx', 'xls'],
-            label_visibility='collapsed'
-        )
-        if uploaded_file is not None:
-            new_bytes = uploaded_file.getbuffer().tobytes()
-            if new_bytes != st.session_state.get('upload_bytes', b''):
-                st.session_state.upload_bytes = new_bytes
-                if 'upload_id' not in st.session_state:
-                    st.session_state.upload_id = uuid.uuid4().hex[:12]
-                st.rerun()
-        if st.session_state.get('upload_bytes'):
-            st.success(f"✅ Usando archivo cargado.")
-            if st.button("↩ Volver al archivo original"):
-                st.session_state.upload_bytes = None
-                st.rerun()
-
 
 if __name__ == "__main__":
     main()
