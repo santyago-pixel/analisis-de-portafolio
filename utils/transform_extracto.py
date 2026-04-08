@@ -425,8 +425,8 @@ def _build_initial_balance_rows(
     fx_rates: pd.DataFrame,
     first_operation_date: pd.Timestamp,
 ) -> list[dict]:
-    funding_date = pd.Timestamp(first_operation_date).normalize() - pd.Timedelta(days=2)
-    opening_date = pd.Timestamp(first_operation_date).normalize() - pd.Timedelta(days=1)
+    funding_date = pd.Timestamp(first_operation_date).normalize() - pd.Timedelta(days=4)
+    opening_date = pd.Timestamp(first_operation_date).normalize() - pd.Timedelta(days=3)
     opening_rows: list[dict] = []
     total_opening_value_usd = 0.0
 
