@@ -1673,7 +1673,7 @@ def main():
                 if is_ext_cash and cut_ext:
                     total += (dep - ret) * fx
                 tipo = row.get('Tipo', np.nan)
-                if pd.notna(tipo):
+                if pd.notna(tipo) and not is_ext_cash:
                     cut_bond = fecha_row < pd.to_datetime(fecha) if strict_bond else fecha_row <= pd.to_datetime(fecha)
                     if cut_bond:
                         monto = _get_monto(row, moneda, fx_rates)
@@ -1798,12 +1798,13 @@ def main():
                 if pd.isna(d):
                     continue
                 fx = _get_fx(fx_rates, d) if moneda == 'ARS' else 1.0
-                if bool(row.get('_Es Cash Externo', False)):
+                is_ext_cash = bool(row.get('_Es Cash Externo', False))
+                if is_ext_cash:
                     dep = float(row[col_dep]) if has_cash and col_dep and pd.notna(row.get(col_dep, np.nan)) else 0.0
                     ret = float(row[col_ret]) if has_cash and col_ret and pd.notna(row.get(col_ret, np.nan)) else 0.0
                     cash_cum_g += (dep - ret) * fx
                 tipo = row.get('Tipo', np.nan)
-                if pd.notna(tipo):
+                if pd.notna(tipo) and not is_ext_cash:
                     monto = _get_monto(row, moneda, fx_rates)
                     cash_cum_g += -monto if str(tipo).strip() == 'Compra' else monto
                 cash_steps_g.append((d, cash_cum_g))
