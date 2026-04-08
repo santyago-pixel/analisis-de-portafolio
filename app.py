@@ -270,7 +270,7 @@ def load_data(filename='operaciones.xlsx'):
             operaciones['Valor ARS'] if 'Valor ARS' in operaciones.columns else np.nan
         )
 
-        # Columnas de cash (pasan tal cual si existen)
+        # Columnas de cash (K:M en el Excel)
         for src, dst in [('Deposito cash', 'Deposito cash'),
                          ('Retiro Cash',   'Retiro Cash'),
                          ('Invertido',     'Invertido')]:
@@ -279,11 +279,35 @@ def load_data(filename='operaciones.xlsx'):
         # Me2: normalizar capitalización para que 'compra', 'VENTA', etc. funcionen
         operaciones_mapped['Tipo']   = operaciones_mapped['Tipo'].str.strip().str.title()
         operaciones_mapped['Activo'] = operaciones_mapped['Activo'].str.strip()
-        # Mantener filas de trading (Tipo+Activo+Monto completos) Y filas de cash puro
-        # (depósitos/retiros sin Activo, que tienen Invertido). Las filas de cash son
-        # ignoradas por el código de portfolio (filtra por Activo específico).
-        es_trading  = operaciones_mapped[['Fecha', 'Tipo', 'Activo', 'Monto']].notna().all(axis=1)
-        es_cash     = operaciones_mapped['Fecha'].notna() & operaciones_mapped['Invertido'].notna()
+
+        trading_types = {
+            'Compra', 'Venta', 'Amortizacion', 'Amortización',
+            'Cupon', 'Cupón', 'Dividendo', 'Dividendos'
+        }
+        cash_types = {'Ingreso', 'Retiro'}
+        cash_cols_present = operaciones_mapped[['Deposito cash', 'Retiro Cash', 'Invertido']].notna().any(axis=1)
+
+        # Cash externo:
+        # - formato nuevo: Operacion = Ingreso / Retiro
+        # - formato legacy: fila sin activo de mercado, pero con columnas K:M cargadas
+        es_cash_tipo = operaciones_mapped['Tipo'].isin(cash_types)
+        es_cash_legacy = (
+            operaciones_mapped['Fecha'].notna()
+            & cash_cols_present
+            & operaciones_mapped['Activo'].isna()
+            & ~operaciones_mapped['Tipo'].isin(trading_types)
+        )
+        operaciones_mapped['_Es Cash Externo'] = es_cash_tipo | es_cash_legacy
+
+        # Mantener filas de trading y filas de cash externo. Esto evita mezclar
+        # columnas K:M accidentales en filas de bonos (por ejemplo amortizaciones).
+        es_trading = (
+            operaciones_mapped['Fecha'].notna()
+            & operaciones_mapped['Tipo'].isin(trading_types)
+            & operaciones_mapped['Activo'].notna()
+            & operaciones_mapped['Monto'].notna()
+        )
+        es_cash = operaciones_mapped['Fecha'].notna() & operaciones_mapped['_Es Cash Externo']
         operaciones_mapped = operaciones_mapped[es_trading | es_cash].reset_index(drop=True)
 
         # C5: descartar Compra/Venta sin Nominales y avisar al usuario
@@ -1644,8 +1668,9 @@ def main():
                 fx  = _get_fx(fx_rates, fecha_row) if moneda == 'ARS' else 1.0
                 dep = row[col_dep] if col_dep and pd.notna(row.get(col_dep, np.nan)) else 0.0
                 ret = row[col_ret] if col_ret and pd.notna(row.get(col_ret, np.nan)) else 0.0
+                is_ext_cash = bool(row.get('_Es Cash Externo', False))
                 cut_ext  = fecha_row <  pd.to_datetime(fecha) if strict_ext  else fecha_row <= pd.to_datetime(fecha)
-                if cut_ext:
+                if is_ext_cash and cut_ext:
                     total += (dep - ret) * fx
                 tipo = row.get('Tipo', np.nan)
                 if pd.notna(tipo):
@@ -1669,7 +1694,7 @@ def main():
             flujos_netos = 0.0
             cash_flows_md = []  # flujos datados para Modified Dietz cash
             for _, row in ops_flujos.iterrows():
-                if pd.notna(row.get(col_dep, np.nan)) or pd.notna(row.get(col_ret, np.nan)):
+                if bool(row.get('_Es Cash Externo', False)):
                     dep = row[col_dep] if pd.notna(row.get(col_dep, np.nan)) else 0.0
                     ret = row[col_ret] if pd.notna(row.get(col_ret, np.nan)) else 0.0
                     fx  = _get_fx(fx_rates, row['Fecha']) if moneda == 'ARS' else 1.0
@@ -1773,9 +1798,10 @@ def main():
                 if pd.isna(d):
                     continue
                 fx = _get_fx(fx_rates, d) if moneda == 'ARS' else 1.0
-                dep = float(row[col_dep]) if has_cash and col_dep and pd.notna(row.get(col_dep, np.nan)) else 0.0
-                ret = float(row[col_ret]) if has_cash and col_ret and pd.notna(row.get(col_ret, np.nan)) else 0.0
-                cash_cum_g += (dep - ret) * fx
+                if bool(row.get('_Es Cash Externo', False)):
+                    dep = float(row[col_dep]) if has_cash and col_dep and pd.notna(row.get(col_dep, np.nan)) else 0.0
+                    ret = float(row[col_ret]) if has_cash and col_ret and pd.notna(row.get(col_ret, np.nan)) else 0.0
+                    cash_cum_g += (dep - ret) * fx
                 tipo = row.get('Tipo', np.nan)
                 if pd.notna(tipo):
                     monto = _get_monto(row, moneda, fx_rates)
@@ -1798,12 +1824,13 @@ def main():
                 d = row['Fecha']
                 if not has_cash or pd.isna(d) or d <= fi_g:
                     continue
-                dep = float(row[col_dep]) if pd.notna(row.get(col_dep, np.nan)) else 0.0
-                ret = float(row[col_ret]) if pd.notna(row.get(col_ret, np.nan)) else 0.0
-                if dep != 0 or ret != 0:
+                if bool(row.get('_Es Cash Externo', False)):
+                    dep = float(row[col_dep]) if pd.notna(row.get(col_dep, np.nan)) else 0.0
+                    ret = float(row[col_ret]) if pd.notna(row.get(col_ret, np.nan)) else 0.0
                     fx = _get_fx(fx_rates, d) if moneda == 'ARS' else 1.0
-                    ni_cum_g += (dep - ret) * fx
-                    ni_steps_g.append((d, ni_cum_g))
+                    if dep != 0 or ret != 0:
+                        ni_cum_g += (dep - ret) * fx
+                        ni_steps_g.append((d, ni_cum_g))
 
             ni_sdf_g = (pd.DataFrame(ni_steps_g, columns=['Fecha', 'NI'])
                           .set_index('Fecha').groupby(level=0).last()
