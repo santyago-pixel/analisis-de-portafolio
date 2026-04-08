@@ -1863,6 +1863,15 @@ def main():
 
             df_chart = pd.DataFrame(chart_rows_g)
             lbl_y = 'ARS' if moneda == 'ARS' else 'USD'
+            y_values = pd.concat([df_chart['Invertido'], df_chart['Valor Total']], ignore_index=True).dropna()
+            if not y_values.empty:
+                y_min = float(y_values.min())
+                y_max = float(y_values.max())
+                y_span = max(y_max - y_min, max(abs(y_max), abs(y_min), 1.0) * 0.02)
+                y_pad = y_span * 0.08
+                y_range = [y_min - y_pad, y_max + y_pad]
+            else:
+                y_range = None
 
             fig = go.Figure()
             fig.add_trace(go.Scatter(
@@ -1885,6 +1894,7 @@ def main():
                 margin=dict(l=0, r=10, t=30, b=0),
                 plot_bgcolor='#F0F2F6',
                 paper_bgcolor='rgba(0,0,0,0)',
+                yaxis=dict(range=y_range, fixedrange=True) if y_range else dict(fixedrange=True),
             )
             st.plotly_chart(fig, use_container_width=True)
 
