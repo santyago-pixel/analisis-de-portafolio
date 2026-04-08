@@ -1548,16 +1548,16 @@ def main():
         evo_display = evo_display[
             ['Activo', 'Nominales al Inicio', 'Valor al Inicio',
              'Nominales Fin Período', 'Precio al Fin', 'Valor Actual',
-             'Costo', 'PPP', 'Amort / Cup / Div', 'Ganancia Total', 'Retorno']
+             'Amort / Cup / Div', 'Costo', 'Ganancia Total', 'Retorno']
         ]
         for col in ['Nominales al Inicio', 'Nominales Fin Período']:
             evo_display[col] = evo_display[col].apply(_fmt_number)
         evo_display['Retorno'] = evo_display['Retorno'].apply(
             lambda x: f"{'▼' if x < 0 else '▲'} {abs(x):.1f}%" if pd.notna(x) else "-"
         )
-        for col in ['Precio al Fin', 'PPP', 'Valor Actual', 'Valor al Inicio',
+        for col in ['Precio al Fin', 'Valor Actual', 'Valor al Inicio',
                     'Costo', 'Amort / Cup / Div', 'Ganancia Total']:
-            if col in ('Precio al Fin', 'PPP'):
+            if col == 'Precio al Fin':
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_price(x, moneda))
             else:
                 evo_display[col] = evo_display[col].apply(lambda x: _fmt_money(x, moneda))
@@ -1569,9 +1569,8 @@ def main():
                          "Valor al Inicio": st.column_config.TextColumn("Valor al Inicio", width="small"),
                          "Precio al Fin": st.column_config.TextColumn("Precio Fin", width="small"),
                          "Valor Actual": st.column_config.TextColumn("Valor Fin", width="small"),
-                         "Costo": st.column_config.TextColumn("Costo", width="small"),
-                         "PPP": st.column_config.TextColumn("PPP", width="small"),
                          "Amort / Cup / Div": st.column_config.TextColumn("Amort/Cup/Div", width="small"),
+                         "Costo": st.column_config.TextColumn("Costo", width="small"),
                          "Ganancia Total": st.column_config.TextColumn("Resultado", width="small"),
                      })
 
