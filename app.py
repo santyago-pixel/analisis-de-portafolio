@@ -1037,13 +1037,6 @@ def mostrar_analisis_detallado_activo(operaciones, precios, activo,
             }
         )
 
-        csv_detalle = detalle_df.to_csv(index=False)
-        st.download_button(
-            label=f"📥 Descargar CSV - {activo}",
-            data=csv_detalle,
-            file_name=f"detalle_{activo}_{fecha_inicio.strftime('%Y%m%d')}_{fecha_fin.strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-        )
     else:
         st.info(f"No hay operaciones para {activo} en el período seleccionado.")
 
@@ -1505,23 +1498,6 @@ def main():
                 "Ganancia Total = (1) + (3) + (4) - (2). "
                 "También se abre como: Ganancia Total = Efecto Precio/Cobros + Efecto FX."
             )
-        else:
-            st.caption(
-                "ℹ️ Amortizaciones, Cupones y Dividendos corresponden únicamente a los flujos "
-                "cobrados desde la apertura de la posición actual. Los flujos de posiciones "
-                "anteriores del mismo activo (antes del último reset) se reflejan en la Sección 2."
-            )
-        export_df = portfolio_df.rename(columns={'_Valor Actual': 'Valor Actual'}).copy()
-        export_df['Amort / Cup / Div'] = (
-            export_df['Amortizaciones'] + export_df['Cupones'] + export_df['Dividendos']
-        )
-        csv = export_df[cols_display].to_csv(index=False)
-        st.download_button(
-            label="📥 Descargar CSV",
-            data=csv,
-            file_name=f"composicion_cartera_{fecha_actual.strftime('%Y%m%d')}_{lbl_moneda}.csv",
-            mime="text/csv",
-        )
 
     # ══════════════════════════════════════════
     # SECCIÓN 2 – EVOLUCIÓN HISTÓRICA
@@ -1852,13 +1828,6 @@ def main():
         except Exception as e:
             st.caption(f"⚠️ No se pudo generar el gráfico: {e}")
 
-        csv_evo = evolution_df.to_csv(index=False)
-        st.download_button(
-            label="📥 Descargar CSV Evolución",
-            data=csv_evo,
-            file_name=f"evolucion_cartera_{fecha_inicio.strftime('%Y%m%d')}_{fecha_fin.strftime('%Y%m%d')}_{lbl_moneda}.csv",
-            mime="text/csv",
-        )
 
     # ── Detalle por activo ─────────────────────────────────────────────────────
     if not evolution_df.empty:
