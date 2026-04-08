@@ -113,9 +113,25 @@ footer             { visibility: hidden; }
 }
 
 /* Date inputs */
-.stDateInput input,
-[data-testid="stDateInputField"] input {
-    font-size: 0.95rem !important;
+div[data-testid="stDateInput"],
+div[data-testid="stDateInput"] * {
+    font-size: 0.78rem !important;
+}
+div[data-testid="stDateInput"] input,
+div[data-testid="stDateInput"] [data-baseweb="input"],
+div[data-testid="stDateInput"] [data-baseweb="input"] input,
+div[data-testid="stDateInput"] [data-baseweb="input"] > div,
+div[data-testid="stDateInput"] [data-baseweb="base-input"] input,
+div[data-testid="stDateInput"] button {
+    font-size: 0.78rem !important;
+    line-height: 1.15 !important;
+}
+div[data-testid="stDateInput"] [data-baseweb="input"] {
+    min-height: 2.15rem !important;
+}
+div[data-testid="stDateInput"] svg {
+    width: 0.9rem !important;
+    height: 0.9rem !important;
 }
 
 /* ══════════════════════════════════════════════
@@ -170,7 +186,7 @@ h3 { font-size: 1.0rem !important; font-weight: 600 !important; color: #1B2333 !
 [data-testid="stDateInput"]  > div > div {
     border-radius: 6px !important;
     border-color: #D1D5DB !important;
-    font-size: 0.88rem !important;
+    font-size: 0.78rem !important;
 }
 
 /* ══════════════════════════════════════════════
@@ -1516,7 +1532,7 @@ def main():
         st.markdown('<div style="height:2.15rem;"></div>', unsafe_allow_html=True)
         lbl_i, inp_i = st.columns([0.7, 2.3])
         with lbl_i:
-            st.markdown('<div style="padding-top:0.42rem;font-size:0.95rem;color:#1B2333;">Inicio</div>', unsafe_allow_html=True)
+            st.markdown('<div style="padding-top:0.42rem;font-size:0.76rem;color:#1B2333;">Inicio</div>', unsafe_allow_html=True)
         with inp_i:
             fecha_inicio = st.date_input(
                 "Inicio",
@@ -1528,7 +1544,7 @@ def main():
         st.markdown('<div style="height:2.15rem;"></div>', unsafe_allow_html=True)
         lbl_f, inp_f = st.columns([0.45, 2.55])
         with lbl_f:
-            st.markdown('<div style="padding-top:0.42rem;font-size:0.95rem;color:#1B2333;">Fin</div>', unsafe_allow_html=True)
+            st.markdown('<div style="padding-top:0.42rem;font-size:0.76rem;color:#1B2333;">Fin</div>', unsafe_allow_html=True)
         with inp_f:
             fecha_fin = st.date_input(
                 "Fin",
