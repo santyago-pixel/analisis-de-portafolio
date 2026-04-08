@@ -14,6 +14,7 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from pathlib import Path
+import subprocess
 import warnings
 
 # Me8: suprimir solo warnings específicos, no todos globalmente
@@ -55,6 +56,20 @@ def _ensure_extract_workbook() -> tuple[str | None, str | None]:
     except Exception as exc:
         fallback = "operaciones.xlsx" if base_path.exists() else None
         return (fallback, f"No se pudo regenerar extracto_transformado.xlsx: {exc}")
+
+
+def _build_probe_label() -> str:
+    probe = "EXTRACTO_PROBE_20260408B"
+    try:
+        sha = (
+            subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True)
+            .strip()
+        )
+        if sha:
+            return f"{probe} / {sha}"
+    except Exception:
+        pass
+    return probe
 
 # ─────────────────────────────────────────────
 # Configuración de la página
@@ -1960,7 +1975,7 @@ def main():
                 live_prices=live_prices, live_fx=live_fx
             )
 
-    st.caption("Build / commit: f5431fe")
+    st.caption(f"Build / probe: {_build_probe_label()}")
 
     # ══════════════════════════════════════════
     # UPLOADER — al pie de la página
