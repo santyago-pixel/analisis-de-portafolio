@@ -1546,11 +1546,11 @@ def main():
 
         evo_display = evolution_df.sort_values('Nominales Fin Período', ascending=False).reset_index(drop=True).copy()
         evo_display = evo_display[
-            ['Activo', 'Nominales al Inicio', 'Valor al Inicio', 'Operaciones del Período',
-             'Nominales Fin Período', 'Costo', 'PPP', 'Amort / Cup / Div',
-             'Precio al Fin', 'Valor Actual', 'Ganancia Total', 'Retorno']
+            ['Activo', 'Nominales al Inicio', 'Valor al Inicio',
+             'Nominales Fin Período', 'Precio al Fin', 'Valor Actual',
+             'Costo', 'PPP', 'Amort / Cup / Div', 'Ganancia Total', 'Retorno']
         ]
-        for col in ['Nominales al Inicio', 'Operaciones del Período', 'Nominales Fin Período']:
+        for col in ['Nominales al Inicio', 'Nominales Fin Período']:
             evo_display[col] = evo_display[col].apply(_fmt_number)
         evo_display['Retorno'] = evo_display['Retorno'].apply(
             lambda x: f"{'▼' if x < 0 else '▲'} {abs(x):.1f}%" if pd.notna(x) else "-"
@@ -1565,14 +1565,13 @@ def main():
                      column_config={
                          "Activo": st.column_config.TextColumn("Activo", width="medium"),
                          "Nominales al Inicio": st.column_config.TextColumn("Nom. Inicio", width="small"),
-                         "Operaciones del Período": st.column_config.TextColumn("Ops. Período", width="small"),
                          "Nominales Fin Período": st.column_config.TextColumn("Nom. Fin", width="small"),
                          "Valor al Inicio": st.column_config.TextColumn("Valor al Inicio", width="small"),
+                         "Precio al Fin": st.column_config.TextColumn("Precio Fin", width="small"),
+                         "Valor Actual": st.column_config.TextColumn("Valor Fin", width="small"),
                          "Costo": st.column_config.TextColumn("Costo", width="small"),
                          "PPP": st.column_config.TextColumn("PPP", width="small"),
                          "Amort / Cup / Div": st.column_config.TextColumn("Amort/Cup/Div", width="small"),
-                         "Precio al Fin": st.column_config.TextColumn("Precio Actual", width="small"),
-                         "Valor Actual": st.column_config.TextColumn("Valor Actual", width="small"),
                          "Ganancia Total": st.column_config.TextColumn("Resultado", width="small"),
                      })
 
