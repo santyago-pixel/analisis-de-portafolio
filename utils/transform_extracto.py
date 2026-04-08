@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from openpyxl import load_workbook
 
 
 CASH_MOVEMENTS = {
@@ -365,6 +367,7 @@ def transform_extract_to_legacy(
     legacy_columns = list(pd.read_excel(base_workbook, sheet_name="Operaciones").columns)
     ops = pd.DataFrame(market_rows + cash_rows)
     ops = _compute_invertido(ops)
+    ops["Fecha"] = pd.to_datetime(ops["Fecha"], errors="coerce").dt.date
 
     for col in legacy_columns:
         if col not in ops.columns:
@@ -373,10 +376,27 @@ def transform_extract_to_legacy(
 
     assets = set(ops["Activo"].dropna().astype(str).str.strip())
     prices = _copy_and_extend_prices(base_prices, assets)
+    mask_live = prices["Fecha"].astype(str).str.strip().str.lower() == "precio actual"
+    prices.loc[~mask_live, "Fecha"] = pd.to_datetime(
+        prices.loc[~mask_live, "Fecha"], errors="coerce"
+    ).dt.date
 
-    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+    with pd.ExcelWriter(
+        output_path,
+        engine="openpyxl",
+        date_format="DD/MM/YYYY",
+        datetime_format="DD/MM/YYYY",
+    ) as writer:
         ops.to_excel(writer, sheet_name="Operaciones", index=False)
         prices.to_excel(writer, sheet_name="Precios", index=False)
+
+    workbook = load_workbook(output_path)
+    for sheet_name in ["Operaciones", "Precios"]:
+        sheet = workbook[sheet_name]
+        for cell in sheet["A"][1:]:
+            if isinstance(cell.value, (datetime, date)):
+                cell.number_format = "DD/MM/YYYY"
+    workbook.save(output_path)
 
 
 def main() -> None:
