@@ -65,6 +65,18 @@ def _sanitize_initial_positions(df: pd.DataFrame | None) -> list[dict]:
     return rows
 
 
+def _resolve_effective_initial_positions(editor_df: pd.DataFrame | None) -> list[dict]:
+    editor_positions = _sanitize_initial_positions(editor_df)
+    if editor_positions:
+        return editor_positions
+
+    seed_df = st.session_state.get('initial_seed_df')
+    seed_positions = _sanitize_initial_positions(seed_df)
+    if seed_positions and st.session_state.get('pdf_name'):
+        return seed_positions
+    return []
+
+
 def _extract_initial_balances_seed(pdf_bytes: bytes | None) -> tuple[pd.DataFrame, float, float, datetime.date | None, str | None]:
     if not pdf_bytes:
         return (pd.DataFrame(columns=["Activo", "Descripción", "Nominales"]), 0.0, 0.0, None, None)
@@ -138,7 +150,7 @@ def _ensure_uploaded_extract_workbook(
 
 
 def _build_probe_label() -> str:
-    probe = "EXTRACTO_PROBE_20260409D"
+    probe = "EXTRACTO_PROBE_20260409E"
     try:
         sha = (
             subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True)
@@ -1633,6 +1645,12 @@ def main():
 
     if st.session_state.get('pdf_name'):
         st.success(f"✅ PDF de saldos detectado: {st.session_state.get('pdf_name')}")
+        seed_positions_preview = _sanitize_initial_positions(st.session_state.get('initial_seed_df'))
+        st.caption(
+            f"Saldos extraídos del PDF: {len(seed_positions_preview)} activos, "
+            f"USD {float(st.session_state.get('initial_cash_usd_seed', 0.0) or 0.0):,.2f}, "
+            f"ARS {float(st.session_state.get('initial_cash_ars_seed', 0.0) or 0.0):,.2f}"
+        )
     if st.session_state.get('initial_pdf_warning'):
         st.warning(st.session_state.get('initial_pdf_warning'))
 
@@ -1686,7 +1704,7 @@ def main():
     filename, transform_warning = _ensure_uploaded_extract_workbook(
         st.session_state.get('upload_bytes'),
         st.session_state.get('upload_id'),
-        initial_positions=_sanitize_initial_positions(initial_positions_df),
+        initial_positions=_resolve_effective_initial_positions(initial_positions_df),
         initial_cash_usd=float(initial_cash_usd),
         initial_cash_ars=float(initial_cash_ars),
         opening_reference_date=opening_reference_date,
