@@ -590,16 +590,19 @@ def _build_initial_balance_rows(
     opening_rows: list[dict] = []
     total_opening_value_usd = 0.0
     balances = initial_asset_balances or []
+    opening_fx = _fx_from_prices(fx_rates, opening_date)
+
+    if not balances and float(initial_cash_usd) == 0.0 and float(initial_cash_ars) == 0.0:
+        return []
 
     for item in balances:
         asset = item["Activo"]
         qty = float(item["Nominales"])
         price = _price_for_asset(prices, asset, opening_date)
-        fx = _fx_from_prices(fx_rates, opening_date)
         precio_usd = price
         valor_usd = qty * price
-        precio_ars = price * fx
-        valor_ars = valor_usd * fx
+        precio_ars = price * opening_fx
+        valor_ars = valor_usd * opening_fx
 
         total_opening_value_usd += valor_usd
         opening_rows.append(
@@ -630,7 +633,7 @@ def _build_initial_balance_rows(
             "Valor USD": np.nan,
             "Precio ARS": np.nan,
             "Valor ARS": np.nan,
-            "Deposito cash": total_opening_value_usd + float(initial_cash_usd) + (float(initial_cash_ars) / fx if fx > 0 else 0.0),
+            "Deposito cash": total_opening_value_usd + float(initial_cash_usd) + (float(initial_cash_ars) / opening_fx if opening_fx > 0 else 0.0),
             "Retiro Cash": np.nan,
         },
     )
