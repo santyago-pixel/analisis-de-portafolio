@@ -22,7 +22,17 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning, module='streamlit')
 
-PRICE_REFERENCE_WORKBOOK = Path("operaciones extracto.xlsx")
+PRICE_REFERENCE_WORKBOOKS = [
+    Path("operaciones extracto.xlsx"),
+    Path("operaciones.xlsx"),
+]
+
+
+def _get_price_reference_workbook() -> Path | None:
+    for path in PRICE_REFERENCE_WORKBOOKS:
+        if path.exists():
+            return path
+    return None
 
 
 def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str | None) -> tuple[str | None, str | None]:
@@ -30,9 +40,9 @@ def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str
     if not upload_bytes:
         return (None, None)
 
-    base_path = PRICE_REFERENCE_WORKBOOK
-    if not base_path.exists():
-        return (None, "No se encontró operaciones extracto.xlsx para usar como referencia de precios.")
+    base_path = _get_price_reference_workbook()
+    if base_path is None:
+        return (None, "No se encontró un workbook de referencia de precios.")
 
     temp_root = Path(tempfile.gettempdir()) / "analisis_portafolio_extracto"
     temp_root.mkdir(parents=True, exist_ok=True)
@@ -68,7 +78,7 @@ def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str
 
 
 def _build_probe_label() -> str:
-    probe = "EXTRACTO_PROBE_20260408E"
+    probe = "EXTRACTO_PROBE_20260408F"
     try:
         sha = (
             subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True)
