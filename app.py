@@ -138,7 +138,7 @@ def _ensure_uploaded_extract_workbook(
 
 
 def _build_probe_label() -> str:
-    probe = "EXTRACTO_PROBE_20260409C"
+    probe = "EXTRACTO_PROBE_20260409D"
     try:
         sha = (
             subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True)
@@ -442,17 +442,27 @@ def load_data(filename):
         es_cash = operaciones_mapped['Fecha'].notna() & operaciones_mapped['_Es Cash Externo']
         operaciones_mapped = operaciones_mapped[es_trading | es_cash].reset_index(drop=True)
 
-        # C5: descartar Compra/Venta sin Nominales y avisar al usuario
+        # C5: descartar Compra/Venta sin Nominales o con nominales no positivos
         mask_bs  = operaciones_mapped['Tipo'].isin(['Compra', 'Venta'])
-        invalid  = operaciones_mapped[mask_bs & operaciones_mapped['Cantidad'].isna()]
+        invalid  = operaciones_mapped[
+            mask_bs & (
+                operaciones_mapped['Cantidad'].isna()
+                | (pd.to_numeric(operaciones_mapped['Cantidad'], errors='coerce') <= 0)
+            )
+        ]
         if not invalid.empty:
             activos_inv = ', '.join(invalid['Activo'].dropna().unique())
             st.warning(
-                f"⚠️ Se ignoraron {len(invalid)} fila(s) de Compra/Venta sin Nominales "
+                f"⚠️ Se ignoraron {len(invalid)} fila(s) de Compra/Venta sin Nominales válidos "
                 f"({activos_inv}). Verificar el Excel."
             )
         operaciones_mapped = operaciones_mapped[
-            ~(mask_bs & operaciones_mapped['Cantidad'].isna())
+            ~(
+                mask_bs & (
+                    operaciones_mapped['Cantidad'].isna()
+                    | (pd.to_numeric(operaciones_mapped['Cantidad'], errors='coerce') <= 0)
+                )
+            )
         ]
 
         xls = pd.ExcelFile(filename)
@@ -818,14 +828,20 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
             monto_usd = float(op.get('Monto')) if pd.notna(op.get('Monto')) else 0.0
             monto_ars = _get_monto(op, 'ARS', fx_rates)
             if tipo == 'Compra':
+                if qty <= 0:
+                    continue
                 costo_prev_usd = current_nominals * costo_unit_usd
                 costo_prev_ars = current_nominals * costo_unit_ars
                 current_nominals += qty
+                if current_nominals <= 0:
+                    continue
                 costo_unit_usd = (costo_prev_usd + monto_usd) / current_nominals
                 costo_unit_ars = (costo_prev_ars + monto_ars) / current_nominals
                 compras_usd += monto_usd
                 compras_ars += monto_ars
             elif tipo == 'Venta':
+                if qty <= 0:
+                    continue
                 gan_realizada_usd += monto_usd - (qty * costo_unit_usd)
                 gan_realizada_ars += monto_ars - (qty * costo_unit_ars)
                 current_nominals -= qty
