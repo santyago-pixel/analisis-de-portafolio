@@ -192,8 +192,8 @@ def _same_day_fx_map(titulos: pd.DataFrame) -> dict[tuple[pd.Timestamp, str], fl
     return fx_map
 
 
-def _observed_native_price_map(titulos: pd.DataFrame) -> dict[str, tuple[str, float]]:
-    observed: dict[str, tuple[str, float]] = {}
+def _observed_native_price_map(titulos: pd.DataFrame) -> dict[str, tuple[str, float, pd.Timestamp]]:
+    observed: dict[str, tuple[str, float, pd.Timestamp]] = {}
     valid = titulos[~titulos["Descripción"].isin(IGNORE_TITLE_DESCRIPTIONS)].copy()
     valid["Bucket"] = valid["Moneda"].apply(_currency_bucket)
     valid = valid[valid["Bucket"].isin(["ARS", "USD"])]
@@ -205,6 +205,7 @@ def _observed_native_price_map(titulos: pd.DataFrame) -> dict[str, tuple[str, fl
         observed[str(asset).strip()] = (
             str(last["Bucket"]).strip(),
             float(last["Precio Promedio Ponderado"]),
+            pd.Timestamp(last["Fecha de Liquidación"]),
         )
     return observed
 
@@ -381,7 +382,8 @@ def _compute_invertido(ops: pd.DataFrame) -> pd.DataFrame:
 def _copy_and_extend_prices(
     base_prices: pd.DataFrame,
     assets: set[str],
-    observed_native_prices: dict[str, tuple[str, float]] | None = None,
+    observed_native_prices: dict[str, tuple[str, float, pd.Timestamp]] | None = None,
+    fx_rates: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     prices = base_prices.copy()
     existing = {str(c).strip() for c in prices.columns}
@@ -389,15 +391,30 @@ def _copy_and_extend_prices(
         raise ValueError("La hoja Precios base no contiene la columna BPD7.")
 
     for asset in sorted(assets):
-        if asset in existing or asset == "DOLAR":
+        if asset == "DOLAR":
             continue
         if observed_native_prices and asset in observed_native_prices:
-            bucket, observed_price = observed_native_prices[asset]
+            bucket, observed_price, observed_date = observed_native_prices[asset]
+            observed_usd = (
+                observed_price / _fx_from_prices(fx_rates, observed_date)
+                if bucket == "ARS"
+                else observed_price
+            )
+            if asset in existing:
+                mask_live = prices["Fecha"].astype(str).str.strip().str.lower() == "precio actual"
+                hist = pd.to_numeric(prices.loc[~mask_live, asset], errors="coerce").dropna()
+                base_last = float(hist.iloc[-1]) if not hist.empty else np.nan
+                if pd.notna(base_last) and base_last > 0 and observed_usd > 0:
+                    ratio = base_last / observed_usd
+                    if ratio > 20 or ratio < 0.05:
+                        prices[asset] = pd.to_numeric(prices[asset], errors="coerce") * (observed_usd / base_last)
+                continue
             if bucket == "ARS":
-                prices[asset] = pd.to_numeric(prices["ARS"], errors="coerce").replace(0, np.nan)
-                prices[asset] = observed_price / prices[asset]
+                prices[asset] = observed_usd
             else:
                 prices[asset] = observed_price
+            continue
+        if asset in existing:
             continue
         if asset in USD_PRICE_FALLBACK_RICS:
             prices[asset] = prices["BPD7"]
@@ -505,7 +522,7 @@ def transform_extract_to_legacy(
         *[str(row["Activo"]).strip() for row in market_rows if pd.notna(row.get("Activo"))],
         *[item["Activo"] for item in INITIAL_ASSET_BALANCES],
     }
-    prices = _copy_and_extend_prices(base_prices, all_assets, observed_native_prices)
+    prices = _copy_and_extend_prices(base_prices, all_assets, observed_native_prices, fx_rates)
     first_operation_date = min(
         pd.Timestamp(df["Fecha de Liquidación"].dropna().min())
         for df in [pesos, dolares, titulos]
