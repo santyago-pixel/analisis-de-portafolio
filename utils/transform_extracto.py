@@ -384,9 +384,10 @@ def _copy_and_extend_prices(
     assets: set[str],
     observed_native_prices: dict[str, tuple[str, float, pd.Timestamp]] | None = None,
     fx_rates: pd.DataFrame | None = None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, dict[str, dict[str, object]]]:
     prices = base_prices.copy()
     existing = {str(c).strip() for c in prices.columns}
+    price_meta: dict[str, dict[str, object]] = {}
     if "BPD7" not in prices.columns:
         raise ValueError("La hoja Precios base no contiene la columna BPD7.")
 
@@ -401,29 +402,173 @@ def _copy_and_extend_prices(
                 else observed_price
             )
             if asset in existing:
+                source = "precios_fallback"
+                scale_factor = 1.0
                 mask_live = prices["Fecha"].astype(str).str.strip().str.lower() == "precio actual"
                 hist = pd.to_numeric(prices.loc[~mask_live, asset], errors="coerce").dropna()
                 base_last = float(hist.iloc[-1]) if not hist.empty else np.nan
                 if pd.notna(base_last) and base_last > 0 and observed_usd > 0:
                     ratio = base_last / observed_usd
                     if ratio > 20 or ratio < 0.05:
-                        prices[asset] = pd.to_numeric(prices[asset], errors="coerce") * (observed_usd / base_last)
+                        scale_factor = observed_usd / base_last
+                        prices[asset] = pd.to_numeric(prices[asset], errors="coerce") * scale_factor
+                        source = "rescaled_legacy"
+                price_meta[asset] = {
+                    "Moneda Cotizacion": bucket,
+                    "Fuente Precio": source,
+                    "Scale Factor": scale_factor,
+                }
                 continue
-            if bucket == "ARS":
-                prices[asset] = observed_usd
-            else:
-                prices[asset] = observed_price
+            prices[asset] = observed_usd
+            price_meta[asset] = {
+                "Moneda Cotizacion": bucket,
+                "Fuente Precio": "extract_native",
+                "Scale Factor": 1.0,
+            }
             continue
         if asset in existing:
+            price_meta[asset] = {
+                "Moneda Cotizacion": "USD",
+                "Fuente Precio": "precios_fallback",
+                "Scale Factor": 1.0,
+            }
             continue
         if asset in USD_PRICE_FALLBACK_RICS:
             prices[asset] = prices["BPD7"]
+            price_meta[asset] = {
+                "Moneda Cotizacion": "USD",
+                "Fuente Precio": "fallback_bpd7",
+                "Scale Factor": 1.0,
+            }
         elif asset in PESO_PRICE_FALLBACK_RICS:
-            prices[asset] = pd.to_numeric(prices["BPD7"], errors="coerce") * pd.to_numeric(prices["ARS"], errors="coerce")
+            prices[asset] = pd.to_numeric(prices["BPD7"], errors="coerce")
+            price_meta[asset] = {
+                "Moneda Cotizacion": "ARS",
+                "Fuente Precio": "fallback_bpd7",
+                "Scale Factor": 1.0,
+            }
         else:
             # Fallback conservador: usar BPD7 en USD.
             prices[asset] = prices["BPD7"]
-    return prices
+            price_meta[asset] = {
+                "Moneda Cotizacion": "USD",
+                "Fuente Precio": "fallback_bpd7",
+                "Scale Factor": 1.0,
+            }
+    return prices, price_meta
+
+
+def _build_prices_long(
+    prices_wide: pd.DataFrame,
+    fx_rates: pd.DataFrame,
+    price_meta: dict[str, dict[str, object]],
+) -> pd.DataFrame:
+    prices = prices_wide.copy()
+    mask_live = prices["Fecha"].astype(str).str.strip().str.lower() == "precio actual"
+    hist = prices.loc[~mask_live].copy()
+    hist["Fecha"] = pd.to_datetime(hist["Fecha"], errors="coerce")
+    hist = hist.dropna(subset=["Fecha"]).sort_values("Fecha")
+
+    tracked_assets = set(price_meta)
+    asset_cols = [col for col in hist.columns if col not in {"Fecha", "ARS"} and col in tracked_assets]
+    prices_long = (
+        hist.melt(id_vars=["Fecha"], value_vars=asset_cols, var_name="Activo", value_name="Precio USD")
+        .dropna(subset=["Precio USD"])
+        .reset_index(drop=True)
+    )
+    if prices_long.empty:
+        return pd.DataFrame(
+            columns=[
+                "Fecha",
+                "Activo",
+                "Moneda Cotizacion",
+                "Precio Original",
+                "FX Usado",
+                "Precio USD",
+                "Fuente Precio",
+            ]
+        )
+
+    fx_only = fx_rates.rename(columns={"ARS": "FX Usado"}).copy()
+    fx_only["Fecha"] = pd.to_datetime(fx_only["Fecha"], errors="coerce")
+    prices_long = prices_long.merge(fx_only, on="Fecha", how="left")
+
+    meta_df = pd.DataFrame(
+        [
+            {
+                "Activo": asset,
+                "Moneda Cotizacion": meta.get("Moneda Cotizacion", "USD"),
+                "Fuente Precio": meta.get("Fuente Precio", "precios_fallback"),
+            }
+            for asset, meta in price_meta.items()
+        ]
+    )
+    if not meta_df.empty:
+        prices_long = prices_long.merge(meta_df, on="Activo", how="left")
+    else:
+        prices_long["Moneda Cotizacion"] = "USD"
+        prices_long["Fuente Precio"] = "precios_fallback"
+
+    prices_long["Moneda Cotizacion"] = prices_long["Moneda Cotizacion"].fillna("USD")
+    prices_long["Fuente Precio"] = prices_long["Fuente Precio"].fillna("precios_fallback")
+    prices_long["Precio Original"] = np.where(
+        prices_long["Moneda Cotizacion"].eq("ARS"),
+        prices_long["Precio USD"] * prices_long["FX Usado"],
+        prices_long["Precio USD"],
+    )
+    return prices_long[
+        [
+            "Fecha",
+            "Activo",
+            "Moneda Cotizacion",
+            "Precio Original",
+            "FX Usado",
+            "Precio USD",
+            "Fuente Precio",
+        ]
+    ].sort_values(["Fecha", "Activo"]).reset_index(drop=True)
+
+
+def _build_compat_prices_sheet(
+    prices_long: pd.DataFrame,
+    fx_rates: pd.DataFrame,
+    base_prices: pd.DataFrame,
+    price_meta: dict[str, dict[str, object]],
+) -> pd.DataFrame:
+    wide_hist = (
+        prices_long.pivot(index="Fecha", columns="Activo", values="Precio USD")
+        .reset_index()
+        .sort_values("Fecha")
+    )
+    fx_hist = fx_rates[["Fecha", "ARS"]].copy()
+    fx_hist["Fecha"] = pd.to_datetime(fx_hist["Fecha"], errors="coerce")
+    wide_hist = wide_hist.merge(fx_hist, on="Fecha", how="left")
+
+    base_live = pd.DataFrame()
+    if "Fecha" in base_prices.columns:
+        mask_live = base_prices["Fecha"].astype(str).str.strip().str.lower() == "precio actual"
+        if mask_live.any():
+            base_live = base_prices.loc[mask_live].copy()
+
+    live_row: dict[str, object] = {"Fecha": "Precio Actual"}
+    live_row["ARS"] = (
+        float(base_live.iloc[0]["ARS"])
+        if not base_live.empty and "ARS" in base_live.columns and pd.notna(base_live.iloc[0]["ARS"])
+        else float(fx_hist.iloc[-1]["ARS"])
+    )
+
+    if not wide_hist.empty:
+        last_hist = wide_hist.sort_values("Fecha").iloc[-1]
+        asset_cols = [col for col in wide_hist.columns if col not in {"Fecha", "ARS"}]
+        for asset in asset_cols:
+            scale_factor = float(price_meta.get(asset, {}).get("Scale Factor", 1.0))
+            if not base_live.empty and asset in base_live.columns and pd.notna(base_live.iloc[0][asset]):
+                live_row[asset] = float(base_live.iloc[0][asset]) * scale_factor
+            else:
+                live_row[asset] = float(last_hist[asset]) if pd.notna(last_hist[asset]) else np.nan
+
+    prices_compat = pd.concat([pd.DataFrame([live_row]), wide_hist], ignore_index=True, sort=False)
+    return prices_compat
 
 
 def _price_for_asset(prices: pd.DataFrame, asset: str, fecha: pd.Timestamp) -> float:
@@ -456,17 +601,10 @@ def _build_initial_balance_rows(
         qty = float(item["Nominales"])
         price = _price_for_asset(prices, asset, opening_date)
         fx = _fx_from_prices(fx_rates, opening_date)
-
-        if asset in PESO_PRICE_FALLBACK_RICS:
-            precio_ars = price
-            valor_ars = qty * price
-            precio_usd = price / fx
-            valor_usd = valor_ars / fx
-        else:
-            precio_usd = price
-            valor_usd = qty * price
-            precio_ars = price * fx
-            valor_ars = valor_usd * fx
+        precio_usd = price
+        valor_usd = qty * price
+        precio_ars = price * fx
+        valor_ars = valor_usd * fx
 
         total_opening_value_usd += valor_usd
         opening_rows.append(
@@ -522,7 +660,9 @@ def transform_extract_to_legacy(
         *[str(row["Activo"]).strip() for row in market_rows if pd.notna(row.get("Activo"))],
         *[item["Activo"] for item in INITIAL_ASSET_BALANCES],
     }
-    prices = _copy_and_extend_prices(base_prices, all_assets, observed_native_prices, fx_rates)
+    prices_wide, price_meta = _copy_and_extend_prices(base_prices, all_assets, observed_native_prices, fx_rates)
+    prices_long = _build_prices_long(prices_wide, fx_rates, price_meta)
+    prices = _build_compat_prices_sheet(prices_long, fx_rates, base_prices, price_meta)
     first_operation_date = min(
         pd.Timestamp(df["Fecha de Liquidación"].dropna().min())
         for df in [pesos, dolares, titulos]
@@ -552,10 +692,12 @@ def transform_extract_to_legacy(
         datetime_format="DD/MM/YYYY",
     ) as writer:
         ops.to_excel(writer, sheet_name="Operaciones", index=False)
+        prices_long.to_excel(writer, sheet_name="PreciosLong", index=False)
+        fx_rates.to_excel(writer, sheet_name="FX", index=False)
         prices.to_excel(writer, sheet_name="Precios", index=False)
 
     workbook = load_workbook(output_path)
-    for sheet_name in ["Operaciones", "Precios"]:
+    for sheet_name in ["Operaciones", "Precios", "PreciosLong", "FX"]:
         sheet = workbook[sheet_name]
         for cell in sheet["A"][1:]:
             if isinstance(cell.value, (datetime, date)):

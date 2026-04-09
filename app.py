@@ -383,51 +383,82 @@ def load_data(filename='operaciones.xlsx'):
             ~(mask_bs & operaciones_mapped['Cantidad'].isna())
         ]
 
-        # ── Hoja Precios ─────────────────────────────────────────────────
-        precios = pd.read_excel(filename, sheet_name='Precios')
-        fecha_col = precios.columns[0]
-        precios = precios.rename(columns={fecha_col: 'Fecha'})
+        xls = pd.ExcelFile(filename)
+        sheet_names = set(xls.sheet_names)
 
-        # ── Extraer fila "Precio Actual" (primera fila = precios en vivo) ──
-        # La primera fila tiene Fecha="Precio Actual" en lugar de una fecha real.
-        # Se separa antes de convertir Fecha a datetime para evitar errores de parseo.
         live_prices = {}
-        live_fx     = None
-        mask_live   = precios['Fecha'].astype(str).str.strip().str.lower() == 'precio actual'
-        if mask_live.any():
-            live_row = precios[mask_live].iloc[0]
-            for col in precios.columns:
-                if col == 'Fecha':
-                    continue
-                val = live_row[col]
-                if col == 'ARS':
-                    if pd.notna(val):
-                        live_fx = float(val)
-                elif pd.notna(val):
-                    live_prices[str(col).strip()] = float(val)
-            # Remover fila de precios en vivo del DataFrame histórico
-            precios = precios[~mask_live].copy()
+        live_fx = None
+        if 'Precios' in sheet_names:
+            precios_live = pd.read_excel(filename, sheet_name='Precios')
+            fecha_col = precios_live.columns[0]
+            precios_live = precios_live.rename(columns={fecha_col: 'Fecha'})
+            mask_live = precios_live['Fecha'].astype(str).str.strip().str.lower() == 'precio actual'
+            if mask_live.any():
+                live_row = precios_live[mask_live].iloc[0]
+                for col in precios_live.columns:
+                    if col == 'Fecha':
+                        continue
+                    val = live_row[col]
+                    if col == 'ARS':
+                        if pd.notna(val):
+                            live_fx = float(val)
+                    elif pd.notna(val):
+                        live_prices[str(col).strip()] = float(val)
 
-        precios['Fecha'] = pd.to_datetime(precios['Fecha'])
+        if {'PreciosLong', 'FX'}.issubset(sheet_names):
+            precios_long_src = pd.read_excel(filename, sheet_name='PreciosLong')
+            precios_long_src['Fecha'] = pd.to_datetime(precios_long_src['Fecha'], errors='coerce')
+            precios_long = (
+                precios_long_src.rename(columns={'Precio USD': 'Precio'})[['Fecha', 'Activo', 'Precio']]
+                .dropna(subset=['Fecha', 'Activo', 'Precio'])
+                .sort_values(['Activo', 'Fecha'])
+                .reset_index(drop=True)
+            )
 
-        # Extraer tipo de cambio ARS ANTES del melt para que no aparezca como bono
-        if 'ARS' in precios.columns:
+            fx_rates = pd.read_excel(filename, sheet_name='FX')
+            fx_rates['Fecha'] = pd.to_datetime(fx_rates['Fecha'], errors='coerce')
             fx_rates = (
-                precios[['Fecha', 'ARS']]
-                .dropna(subset=['ARS'])
+                fx_rates[['Fecha', 'ARS']]
+                .dropna(subset=['Fecha', 'ARS'])
                 .sort_values('Fecha')
                 .reset_index(drop=True)
             )
-            precios_para_melt = precios.drop(columns=['ARS'])
-        else:
-            fx_rates = pd.DataFrame(columns=['Fecha', 'ARS'])
-            precios_para_melt = precios
 
-        precios_long = precios_para_melt.melt(
-            id_vars=['Fecha'],
-            var_name='Activo',
-            value_name='Precio'
-        ).dropna()
+            if live_fx is None and not fx_rates.empty:
+                live_fx = float(fx_rates.iloc[-1]['ARS'])
+            if not live_prices and not precios_long.empty:
+                latest = precios_long.sort_values('Fecha').groupby('Activo').tail(1)
+                live_prices = dict(zip(latest['Activo'], latest['Precio']))
+        else:
+            # ── Hoja Precios legacy/ancha ─────────────────────────────────
+            precios = pd.read_excel(filename, sheet_name='Precios')
+            fecha_col = precios.columns[0]
+            precios = precios.rename(columns={fecha_col: 'Fecha'})
+
+            # La primera fila tiene Fecha="Precio Actual" en lugar de una fecha real.
+            mask_live = precios['Fecha'].astype(str).str.strip().str.lower() == 'precio actual'
+            if mask_live.any():
+                precios = precios[~mask_live].copy()
+
+            precios['Fecha'] = pd.to_datetime(precios['Fecha'])
+
+            if 'ARS' in precios.columns:
+                fx_rates = (
+                    precios[['Fecha', 'ARS']]
+                    .dropna(subset=['ARS'])
+                    .sort_values('Fecha')
+                    .reset_index(drop=True)
+                )
+                precios_para_melt = precios.drop(columns=['ARS'])
+            else:
+                fx_rates = pd.DataFrame(columns=['Fecha', 'ARS'])
+                precios_para_melt = precios
+
+            precios_long = precios_para_melt.melt(
+                id_vars=['Fecha'],
+                var_name='Activo',
+                value_name='Precio'
+            ).dropna()
 
         return operaciones_mapped, precios_long, fx_rates, live_prices, live_fx
 
