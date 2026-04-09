@@ -16,6 +16,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import subprocess
 import tempfile
+import hashlib
+import json
 import warnings
 
 # Me8: suprimir solo warnings específicos, no todos globalmente
@@ -26,6 +28,7 @@ PRICE_REFERENCE_WORKBOOKS = [
     Path("operaciones extracto.xlsx"),
     Path("operaciones.xlsx"),
 ]
+TRANSFORM_CACHE_VERSION = "20260409F"
 
 
 def _get_price_reference_workbook() -> Path | None:
@@ -115,11 +118,28 @@ def _ensure_uploaded_extract_workbook(
     temp_root = Path(tempfile.gettempdir()) / "analisis_portafolio_extracto"
     temp_root.mkdir(parents=True, exist_ok=True)
     upload_tag = upload_id or "session"
+    signature_payload = {
+        "transform_version": TRANSFORM_CACHE_VERSION,
+        "upload_id": upload_tag,
+        "initial_positions": initial_positions or [],
+        "initial_cash_usd": round(float(initial_cash_usd or 0.0), 6),
+        "initial_cash_ars": round(float(initial_cash_ars or 0.0), 6),
+        "opening_reference_date": (
+            pd.to_datetime(opening_reference_date).date().isoformat()
+            if opening_reference_date is not None
+            else None
+        ),
+    }
+    transform_signature = hashlib.sha256(
+        json.dumps(signature_payload, sort_keys=True, ensure_ascii=True).encode("utf-8")
+    ).hexdigest()[:16]
     extract_path = temp_root / f"extracto_fuente_{upload_tag}.xlsx"
-    output_path = temp_root / f"extracto_transformado_{upload_tag}.xlsx"
+    output_path = temp_root / f"extracto_transformado_{transform_signature}.xlsx"
 
     try:
         extract_path.write_bytes(upload_bytes)
+        if output_path.exists():
+            return (str(output_path), None)
         try:
             xls = pd.ExcelFile(extract_path)
             sheet_names = set(xls.sheet_names)
@@ -150,7 +170,7 @@ def _ensure_uploaded_extract_workbook(
 
 
 def _build_probe_label() -> str:
-    probe = "EXTRACTO_PROBE_20260409E"
+    probe = "EXTRACTO_PROBE_20260409F"
     try:
         sha = (
             subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True)
