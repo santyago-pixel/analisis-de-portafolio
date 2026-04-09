@@ -22,15 +22,17 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning, module='streamlit')
 
+PRICE_REFERENCE_WORKBOOK = Path("operaciones extracto.xlsx")
+
 
 def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str | None) -> tuple[str | None, str | None]:
     """Transforma un extracto crudo tipo broker y retorna la ruta temporal."""
     if not upload_bytes:
         return (None, None)
 
-    base_path = Path("operaciones.xlsx")
+    base_path = PRICE_REFERENCE_WORKBOOK
     if not base_path.exists():
-        return (None, "No se encontró operaciones.xlsx para usar como base de precios.")
+        return (None, "No se encontró operaciones extracto.xlsx para usar como referencia de precios.")
 
     temp_root = Path(tempfile.gettempdir()) / "analisis_portafolio_extracto"
     temp_root.mkdir(parents=True, exist_ok=True)
@@ -66,7 +68,7 @@ def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str
 
 
 def _build_probe_label() -> str:
-    probe = "EXTRACTO_PROBE_20260408D"
+    probe = "EXTRACTO_PROBE_20260408E"
     try:
         sha = (
             subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True)
@@ -288,8 +290,8 @@ hr {
 # ─────────────────────────────────────────────
 # Carga de datos
 # ─────────────────────────────────────────────
-def load_data(filename='operaciones.xlsx'):
-    """Cargar datos desde operaciones.xlsx o archivo especificado.
+def load_data(filename):
+    """Cargar datos desde un workbook transformado de la app.
 
     Retorna (operaciones_mapped, precios_long, fx_rates, live_prices, live_fx) donde:
       - operaciones_mapped: DataFrame con columnas Fecha, Tipo, Activo,

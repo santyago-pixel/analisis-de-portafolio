@@ -103,6 +103,21 @@ INITIAL_ASSET_BALANCES = [
 
 INITIAL_CASH_USD = 850.0
 
+OUTPUT_OPERATION_COLUMNS = [
+    "Fecha",
+    "Operacion",
+    "Tipo de activo",
+    "Activo",
+    "Nominales",
+    "Precio",
+    "Valor USD",
+    "Precio ARS",
+    "Valor ARS",
+    "Deposito cash",
+    "Retiro Cash",
+    "Invertido",
+]
+
 
 def _read_extract_sheet(path: Path, sheet_name: str) -> pd.DataFrame:
     raw = pd.read_excel(path, sheet_name=sheet_name, header=3)
@@ -129,8 +144,8 @@ def _read_extract_sheet(path: Path, sheet_name: str) -> pd.DataFrame:
     return df
 
 
-def _load_base_prices(base_workbook: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-    prices = pd.read_excel(base_workbook, sheet_name="Precios")
+def _load_reference_prices(reference_workbook: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    prices = pd.read_excel(reference_workbook, sheet_name="Precios")
     fx_rates = prices.copy()
     fx_rates["Fecha"] = fx_rates["Fecha"].astype(str)
     fx_rates = fx_rates[fx_rates["Fecha"].str.strip().str.lower() != "precio actual"].copy()
@@ -650,7 +665,7 @@ def transform_extract_to_legacy(
     pesos = _read_extract_sheet(extract_path, "Pesos")
     dolares = _read_extract_sheet(extract_path, "Dólares")
     titulos = _read_extract_sheet(extract_path, "Títulos")
-    base_prices, fx_rates = _load_base_prices(base_workbook)
+    base_prices, fx_rates = _load_reference_prices(base_workbook)
 
     fx_map = _same_day_fx_map(titulos)
     observed_native_prices = _observed_native_price_map(titulos)
@@ -670,15 +685,13 @@ def transform_extract_to_legacy(
     )
     opening_rows = _build_initial_balance_rows(prices, fx_rates, first_operation_date)
 
-    legacy_columns = list(pd.read_excel(base_workbook, sheet_name="Operaciones").columns)
     ops = pd.DataFrame(opening_rows + market_rows + cash_rows)
     ops = _compute_invertido(ops)
     ops["Fecha"] = pd.to_datetime(ops["Fecha"], errors="coerce").dt.date
-
-    for col in legacy_columns:
+    for col in OUTPUT_OPERATION_COLUMNS:
         if col not in ops.columns:
             ops[col] = np.nan
-    ops = ops[legacy_columns]
+    ops = ops[OUTPUT_OPERATION_COLUMNS]
 
     mask_live = prices["Fecha"].astype(str).str.strip().str.lower() == "precio actual"
     prices.loc[~mask_live, "Fecha"] = pd.to_datetime(
@@ -708,7 +721,7 @@ def transform_extract_to_legacy(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Transforma extractos de cuenta al formato legado de la app.")
     parser.add_argument("--input", default="2025_3618.xlsx", help="Excel extracto fuente.")
-    parser.add_argument("--base", default="operaciones.xlsx", help="Excel legado usado como base para Precios/columnas.")
+    parser.add_argument("--base", default="operaciones extracto.xlsx", help="Excel de referencia usado como base de precios.")
     parser.add_argument("--output", default="extracto_transformado.xlsx", help="Ruta del Excel de salida.")
     args = parser.parse_args()
 
