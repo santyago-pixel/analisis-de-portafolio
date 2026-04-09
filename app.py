@@ -138,7 +138,7 @@ def _ensure_uploaded_extract_workbook(
 
 
 def _build_probe_label() -> str:
-    probe = "EXTRACTO_PROBE_20260409B"
+    probe = "EXTRACTO_PROBE_20260409C"
     try:
         sha = (
             subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True)

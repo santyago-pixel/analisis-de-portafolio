@@ -580,6 +580,11 @@ def _build_initial_balance_rows(
     initial_cash_ars: float = 0.0,
     opening_reference_date: date | datetime | pd.Timestamp | None = None,
 ) -> list[dict]:
+    balances = initial_asset_balances or []
+    has_initial_cash = float(initial_cash_usd) != 0.0 or float(initial_cash_ars) != 0.0
+    if not balances and not has_initial_cash:
+        return []
+
     reference_date = (
         pd.Timestamp(opening_reference_date).normalize()
         if opening_reference_date is not None
@@ -589,11 +594,7 @@ def _build_initial_balance_rows(
     opening_date = reference_date - pd.Timedelta(days=1)
     opening_rows: list[dict] = []
     total_opening_value_usd = 0.0
-    balances = initial_asset_balances or []
     opening_fx = _fx_from_prices(fx_rates, opening_date)
-
-    if not balances and float(initial_cash_usd) == 0.0 and float(initial_cash_ars) == 0.0:
-        return []
 
     for item in balances:
         asset = item["Activo"]
