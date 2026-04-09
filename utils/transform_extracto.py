@@ -73,36 +73,6 @@ PESO_PRICE_FALLBACK_RICS = {
     "TZXM7",
 }
 
-INITIAL_ASSET_BALANCES = [
-    {
-        "Activo": "BPOD7",
-        "Descripción": "BOPREAL S. 1 D VTO31/10/27 U$S",
-        "Nominales": 11000.0,
-    },
-    {
-        "Activo": "BPY26",
-        "Descripción": "BOPREAL S.3 VTO31/05/26 U$S",
-        "Nominales": 8700.0,
-    },
-    {
-        "Activo": "PNXCO",
-        "Descripción": "ON PAN AMERICAN ENERGY 8.5 %",
-        "Nominales": 20000.0,
-    },
-    {
-        "Activo": "TTC9O",
-        "Descripción": "ON TECPETROL CL.9 V.24/10/29 U",
-        "Nominales": 20000.0,
-    },
-    {
-        "Activo": "TZXD7",
-        "Descripción": "BONTES $ A DESC AJ CER V15/12/27",
-        "Nominales": 3546099.0,
-    },
-]
-
-INITIAL_CASH_USD = 850.0
-
 OUTPUT_OPERATION_COLUMNS = [
     "Fecha",
     "Operacion",
@@ -605,13 +575,23 @@ def _build_initial_balance_rows(
     prices: pd.DataFrame,
     fx_rates: pd.DataFrame,
     first_operation_date: pd.Timestamp,
+    initial_asset_balances: list[dict] | None = None,
+    initial_cash_usd: float = 0.0,
+    initial_cash_ars: float = 0.0,
+    opening_reference_date: date | datetime | pd.Timestamp | None = None,
 ) -> list[dict]:
-    funding_date = pd.Timestamp(first_operation_date).normalize() - pd.Timedelta(days=4)
-    opening_date = pd.Timestamp(first_operation_date).normalize() - pd.Timedelta(days=3)
+    reference_date = (
+        pd.Timestamp(opening_reference_date).normalize()
+        if opening_reference_date is not None
+        else pd.Timestamp(first_operation_date).normalize()
+    )
+    funding_date = reference_date - pd.Timedelta(days=2)
+    opening_date = reference_date - pd.Timedelta(days=1)
     opening_rows: list[dict] = []
     total_opening_value_usd = 0.0
+    balances = initial_asset_balances or []
 
-    for item in INITIAL_ASSET_BALANCES:
+    for item in balances:
         asset = item["Activo"]
         qty = float(item["Nominales"])
         price = _price_for_asset(prices, asset, opening_date)
@@ -650,7 +630,7 @@ def _build_initial_balance_rows(
             "Valor USD": np.nan,
             "Precio ARS": np.nan,
             "Valor ARS": np.nan,
-            "Deposito cash": total_opening_value_usd + INITIAL_CASH_USD,
+            "Deposito cash": total_opening_value_usd + float(initial_cash_usd) + (float(initial_cash_ars) / fx if fx > 0 else 0.0),
             "Retiro Cash": np.nan,
         },
     )
@@ -661,6 +641,10 @@ def transform_extract_to_legacy(
     extract_path: Path,
     base_workbook: Path,
     output_path: Path,
+    initial_asset_balances: list[dict] | None = None,
+    initial_cash_usd: float | None = None,
+    initial_cash_ars: float | None = None,
+    opening_reference_date: date | datetime | pd.Timestamp | None = None,
 ) -> None:
     pesos = _read_extract_sheet(extract_path, "Pesos")
     dolares = _read_extract_sheet(extract_path, "Dólares")
@@ -673,7 +657,7 @@ def transform_extract_to_legacy(
     cash_rows = _build_cash_and_flow_rows(pesos, dolares, fx_rates)
     all_assets = {
         *[str(row["Activo"]).strip() for row in market_rows if pd.notna(row.get("Activo"))],
-        *[item["Activo"] for item in INITIAL_ASSET_BALANCES],
+        *[item["Activo"] for item in (initial_asset_balances or [])],
     }
     prices_wide, price_meta = _copy_and_extend_prices(base_prices, all_assets, observed_native_prices, fx_rates)
     prices_long = _build_prices_long(prices_wide, fx_rates, price_meta)
@@ -683,7 +667,15 @@ def transform_extract_to_legacy(
         for df in [pesos, dolares, titulos]
         if not df["Fecha de Liquidación"].dropna().empty
     )
-    opening_rows = _build_initial_balance_rows(prices, fx_rates, first_operation_date)
+    opening_rows = _build_initial_balance_rows(
+        prices,
+        fx_rates,
+        first_operation_date,
+        initial_asset_balances=initial_asset_balances or [],
+        initial_cash_usd=0.0 if initial_cash_usd is None else initial_cash_usd,
+        initial_cash_ars=0.0 if initial_cash_ars is None else initial_cash_ars,
+        opening_reference_date=opening_reference_date,
+    )
 
     ops = pd.DataFrame(opening_rows + market_rows + cash_rows)
     ops = _compute_invertido(ops)

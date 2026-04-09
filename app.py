@@ -35,7 +35,63 @@ def _get_price_reference_workbook() -> Path | None:
     return None
 
 
-def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str | None) -> tuple[str | None, str | None]:
+def _sanitize_initial_positions(df: pd.DataFrame | None) -> list[dict]:
+    if df is None or df.empty:
+        return []
+    rows = []
+    work = df.copy()
+    for col in ["Activo", "Descripción", "Nominales"]:
+        if col not in work.columns:
+            work[col] = np.nan
+    work["Activo"] = work["Activo"].astype(str).str.strip().str.upper()
+    work["Descripción"] = work["Descripción"].fillna("").astype(str).str.strip()
+    work["Nominales"] = pd.to_numeric(work["Nominales"], errors="coerce")
+    work = work[(work["Activo"] != "") & work["Nominales"].notna() & (work["Nominales"] > 0)]
+    if work.empty:
+        return []
+    grouped = (
+        work.groupby("Activo", as_index=False)
+        .agg({"Descripción": "first", "Nominales": "sum"})
+        .sort_values("Activo")
+    )
+    for _, row in grouped.iterrows():
+        rows.append(
+            {
+                "Activo": row["Activo"],
+                "Descripción": row["Descripción"],
+                "Nominales": float(row["Nominales"]),
+            }
+        )
+    return rows
+
+
+def _extract_initial_balances_seed(pdf_bytes: bytes | None) -> tuple[pd.DataFrame, float, float, datetime.date | None, str | None]:
+    if not pdf_bytes:
+        return (pd.DataFrame(columns=["Activo", "Descripción", "Nominales"]), 0.0, 0.0, None, None)
+    try:
+        from utils.initial_balances_pdf import extract_initial_balances_from_pdf_bytes
+
+        parsed = extract_initial_balances_from_pdf_bytes(pdf_bytes)
+        df = pd.DataFrame(parsed.positions, columns=["Activo", "Descripción", "Nominales"])
+        return (df, float(parsed.cash_usd), float(parsed.cash_ars), parsed.period_start, None)
+    except Exception as exc:
+        return (
+            pd.DataFrame(columns=["Activo", "Descripción", "Nominales"]),
+            0.0,
+            0.0,
+            None,
+            f"No se pudieron extraer los saldos iniciales del PDF: {exc}",
+        )
+
+
+def _ensure_uploaded_extract_workbook(
+    upload_bytes: bytes | None,
+    upload_id: str | None,
+    initial_positions: list[dict] | None = None,
+    initial_cash_usd: float = 0.0,
+    initial_cash_ars: float = 0.0,
+    opening_reference_date=None,
+) -> tuple[str | None, str | None]:
     """Transforma un extracto crudo tipo broker y retorna la ruta temporal."""
     if not upload_bytes:
         return (None, None)
@@ -71,6 +127,10 @@ def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str
             extract_path=extract_path,
             base_workbook=base_path,
             output_path=output_path,
+            initial_asset_balances=initial_positions or [],
+            initial_cash_usd=initial_cash_usd,
+            initial_cash_ars=initial_cash_ars,
+            opening_reference_date=opening_reference_date,
         )
         return (str(output_path), None)
     except Exception as exc:
@@ -78,7 +138,7 @@ def _ensure_uploaded_extract_workbook(upload_bytes: bytes | None, upload_id: str
 
 
 def _build_probe_label() -> str:
-    probe = "EXTRACTO_PROBE_20260408F"
+    probe = "EXTRACTO_PROBE_20260409A"
     try:
         sha = (
             subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True)
@@ -1500,6 +1560,15 @@ def main():
             st.session_state.upload_bytes = new_bytes
             st.session_state.upload_name = uploaded_file.name
             st.session_state.upload_id = uuid.uuid4().hex[:12]
+            st.session_state.pdf_bytes = None
+            st.session_state.pdf_name = None
+            st.session_state.pdf_id = None
+            st.session_state.initial_seed_df = pd.DataFrame(columns=["Activo", "Descripción", "Nominales"])
+            st.session_state.initial_cash_usd_seed = 0.0
+            st.session_state.initial_cash_ars_seed = 0.0
+            st.session_state.initial_period_start = None
+            st.session_state.initial_pdf_warning = None
+            st.session_state.initial_editor_version = uuid.uuid4().hex[:8]
             st.rerun()
 
     if st.session_state.get('upload_bytes'):
@@ -1511,15 +1580,100 @@ def main():
                 st.session_state.upload_bytes = None
                 st.session_state.upload_name = None
                 st.session_state.upload_id = None
+                st.session_state.pdf_bytes = None
+                st.session_state.pdf_name = None
+                st.session_state.pdf_id = None
+                st.session_state.initial_seed_df = pd.DataFrame(columns=["Activo", "Descripción", "Nominales"])
+                st.session_state.initial_cash_usd_seed = 0.0
+                st.session_state.initial_cash_ars_seed = 0.0
+                st.session_state.initial_period_start = None
+                st.session_state.initial_pdf_warning = None
+                st.session_state.initial_editor_version = None
                 st.rerun()
     else:
         st.info("Subí un extracto de cuenta en formato broker para transformar y analizar la cartera.")
         st.caption(f"Build / probe: {_build_probe_label()}")
         return
 
+    uploaded_pdf = st.file_uploader(
+        "Subí el PDF de saldos iniciales (opcional)",
+        type=['pdf'],
+        key='initial_pdf_upload',
+    )
+    if uploaded_pdf is not None:
+        pdf_bytes = uploaded_pdf.getbuffer().tobytes()
+        if pdf_bytes != st.session_state.get('pdf_bytes', b''):
+            seed_df, cash_usd_seed, cash_ars_seed, period_start_seed, pdf_warning = _extract_initial_balances_seed(pdf_bytes)
+            st.session_state.pdf_bytes = pdf_bytes
+            st.session_state.pdf_name = uploaded_pdf.name
+            st.session_state.pdf_id = uuid.uuid4().hex[:12]
+            st.session_state.initial_seed_df = seed_df
+            st.session_state.initial_cash_usd_seed = cash_usd_seed
+            st.session_state.initial_cash_ars_seed = cash_ars_seed
+            st.session_state.initial_period_start = period_start_seed
+            st.session_state.initial_pdf_warning = pdf_warning
+            st.session_state.initial_editor_version = uuid.uuid4().hex[:8]
+            st.rerun()
+
+    if st.session_state.get('pdf_name'):
+        st.success(f"✅ PDF de saldos detectado: {st.session_state.get('pdf_name')}")
+    if st.session_state.get('initial_pdf_warning'):
+        st.warning(st.session_state.get('initial_pdf_warning'))
+
+    seed_df = st.session_state.get('initial_seed_df')
+    if seed_df is None:
+        seed_df = pd.DataFrame(columns=["Activo", "Descripción", "Nominales"])
+        st.session_state.initial_seed_df = seed_df
+    editor_key = f"initial_editor_{st.session_state.get('initial_editor_version', 'base')}"
+    st.markdown("<div style='height:0.35rem;'></div>", unsafe_allow_html=True)
+    st.markdown("**Saldos iniciales**")
+    st.caption("La app intenta extraerlos del PDF y podés corregirlos manualmente antes de transformar el extracto.")
+    initial_positions_df = st.data_editor(
+        seed_df,
+        key=editor_key,
+        num_rows="dynamic",
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "Activo": st.column_config.TextColumn("Activo"),
+            "Descripción": st.column_config.TextColumn("Descripción", width="large"),
+            "Nominales": st.column_config.NumberColumn("Nominales", format="%.2f"),
+        },
+    )
+    col_cash_usd, col_cash_ars, col_ref = st.columns([1, 1, 1.2])
+    with col_cash_usd:
+        initial_cash_usd = st.number_input(
+            "Cash inicial USD",
+            min_value=0.0,
+            value=float(st.session_state.get('initial_cash_usd_seed', 0.0) or 0.0),
+            step=100.0,
+            format="%.2f",
+            key="initial_cash_usd_input",
+        )
+    with col_cash_ars:
+        initial_cash_ars = st.number_input(
+            "Cash inicial ARS",
+            min_value=0.0,
+            value=float(st.session_state.get('initial_cash_ars_seed', 0.0) or 0.0),
+            step=1000.0,
+            format="%.2f",
+            key="initial_cash_ars_input",
+        )
+    with col_ref:
+        default_reference_date = st.session_state.get('initial_period_start') or datetime(datetime.now().year, 1, 1).date()
+        opening_reference_date = st.date_input(
+            "Fecha de referencia de saldos iniciales",
+            value=default_reference_date,
+            key="opening_reference_date_input",
+        )
+
     filename, transform_warning = _ensure_uploaded_extract_workbook(
         st.session_state.get('upload_bytes'),
         st.session_state.get('upload_id'),
+        initial_positions=_sanitize_initial_positions(initial_positions_df),
+        initial_cash_usd=float(initial_cash_usd),
+        initial_cash_ars=float(initial_cash_ars),
+        opening_reference_date=opening_reference_date,
     )
     if transform_warning:
         st.error(transform_warning)
