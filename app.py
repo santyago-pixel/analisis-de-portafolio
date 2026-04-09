@@ -28,7 +28,7 @@ PRICE_REFERENCE_WORKBOOKS = [
     Path("operaciones extracto.xlsx"),
     Path("operaciones.xlsx"),
 ]
-TRANSFORM_CACHE_VERSION = "20260409F"
+TRANSFORM_CACHE_VERSION = "20260409G"
 
 
 def _get_price_reference_workbook() -> Path | None:
@@ -170,7 +170,7 @@ def _ensure_uploaded_extract_workbook(
 
 
 def _build_probe_label() -> str:
-    probe = "EXTRACTO_PROBE_20260409F"
+    probe = "EXTRACTO_PROBE_20260409G"
     try:
         sha = (
             subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True)
@@ -433,6 +433,9 @@ def load_data(filename):
         operaciones_mapped['Monto ARS'] = (
             operaciones['Valor ARS'] if 'Valor ARS' in operaciones.columns else np.nan
         )
+        operaciones_mapped['Es Saldo Inicial'] = (
+            operaciones['Es Saldo Inicial'] if 'Es Saldo Inicial' in operaciones.columns else False
+        )
 
         # Columnas de cash (K:M en el Excel)
         for src, dst in [('Deposito cash', 'Deposito cash'),
@@ -443,6 +446,9 @@ def load_data(filename):
         # Me2: normalizar capitalización para que 'compra', 'VENTA', etc. funcionen
         operaciones_mapped['Tipo']   = operaciones_mapped['Tipo'].str.strip().str.title()
         operaciones_mapped['Activo'] = operaciones_mapped['Activo'].str.strip()
+        operaciones_mapped['Es Saldo Inicial'] = (
+            operaciones_mapped['Es Saldo Inicial'].fillna(False).astype(bool)
+        )
 
         trading_types = {
             'Compra', 'Venta', 'Amortizacion', 'Amortización',
@@ -806,7 +812,11 @@ def calculate_current_portfolio(operaciones, precios, fecha_actual,
         buys_q  = buys_q  if not pd.isna(buys_q)  else 0
         sells_q = sells_q if not pd.isna(sells_q) else 0
         deficit = sells_q - buys_q
-        if deficit > 0:
+        asset_has_explicit_opening = bool(
+            ('Es Saldo Inicial' in ops.columns and ops['Es Saldo Inicial'].fillna(False).any())
+            or ('Es Saldo Inicial' in asset_ops_until.columns and asset_ops_until['Es Saldo Inicial'].fillna(False).any())
+        )
+        if deficit > 0 and not asset_has_explicit_opening:
             oldest_row   = asset_prices.iloc[0]
             oldest_price = float(oldest_row['Precio'])
             oldest_date  = oldest_row['Fecha']
@@ -998,7 +1008,10 @@ def calculate_portfolio_evolution(operaciones, precios, fecha_inicio, fecha_fin,
         buys_q  = buys_q  if not pd.isna(buys_q)  else 0
         sells_q = sells_q if not pd.isna(sells_q) else 0
         deficit = sells_q - buys_q
-        if deficit > 0 and not asset_prices.empty:
+        asset_has_explicit_opening = bool(
+            ('Es Saldo Inicial' in asset_ops.columns and asset_ops['Es Saldo Inicial'].fillna(False).any())
+        )
+        if deficit > 0 and not asset_prices.empty and not asset_has_explicit_opening:
             oldest_row        = asset_prices.iloc[0]
             oldest_price      = float(oldest_row['Precio'])
             oldest_date       = oldest_row['Fecha']

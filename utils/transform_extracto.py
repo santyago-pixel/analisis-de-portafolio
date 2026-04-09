@@ -83,6 +83,7 @@ OUTPUT_OPERATION_COLUMNS = [
     "Valor USD",
     "Precio ARS",
     "Valor ARS",
+    "Es Saldo Inicial",
     "Deposito cash",
     "Retiro Cash",
     "Invertido",
@@ -273,6 +274,7 @@ def _build_market_rows(
                 "Valor USD": valor_usd,
                 "Precio ARS": precio_ars,
                 "Valor ARS": valor_ars,
+                "Es Saldo Inicial": False,
                 "Deposito cash": np.nan,
                 "Retiro Cash": np.nan,
             }
@@ -617,6 +619,7 @@ def _build_initial_balance_rows(
                 "Valor USD": valor_usd,
                 "Precio ARS": precio_ars,
                 "Valor ARS": valor_ars,
+                "Es Saldo Inicial": True,
                 "Deposito cash": np.nan,
                 "Retiro Cash": np.nan,
             }
@@ -634,6 +637,7 @@ def _build_initial_balance_rows(
             "Valor USD": np.nan,
             "Precio ARS": np.nan,
             "Valor ARS": np.nan,
+            "Es Saldo Inicial": False,
             "Deposito cash": total_opening_value_usd + float(initial_cash_usd) + (float(initial_cash_ars) / opening_fx if opening_fx > 0 else 0.0),
             "Retiro Cash": np.nan,
         },
